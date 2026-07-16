@@ -1,0 +1,18 @@
+# Private planning materials — never ship (contain NDA references)
+/docs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Env / secrets
+.env
+.env.*
+!.env.example

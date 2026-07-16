@@ -36,18 +36,41 @@ class ProxyState:
         self.sticky = sticky
         self._counter = itertools.count()
         self.affinity: dict[str, int] = {}
+        self.down: set[int] = set()
         self.log: list[dict[str, Any]] = []
 
-    def pick(self, session_id: str | None) -> int:
+    def _up(self) -> list[int]:
+        return [i for i in range(len(self.upstreams)) if i not in self.down]
+
+    def pick(self, session_id: str | None) -> int | None:
+        """Target instance index, or None if unroutable (session owner down / nothing up)."""
         if self.sticky and session_id and session_id in self.affinity:
-            return self.affinity[session_id]
-        return next(self._counter) % len(self.upstreams)
+            idx = self.affinity[session_id]
+            return None if idx in self.down else idx
+        up = self._up()
+        if not up:
+            return None
+        return up[next(self._counter) % len(up)]
 
 
 def create_proxy_app(state: ProxyState) -> Starlette:
     async def forward(request: Request) -> Response:
         session_id = request.headers.get(SESSION_HEADER)
         idx = state.pick(session_id)
+        if idx is None:
+            state.log.append(
+                {
+                    "n": len(state.log) + 1,
+                    "method": request.method,
+                    "instance": None,
+                    "had_session": bool(session_id),
+                    "status": 503,
+                }
+            )
+            return JSONResponse(
+                {"error": "instance down - session lost / no instance available"},
+                status_code=503,
+            )
         target = state.upstreams[idx]
 
         body = await request.body()
@@ -81,7 +104,12 @@ def create_proxy_app(state: ProxyState) -> Starlette:
 
     async def log(_: Request) -> Response:
         return JSONResponse(
-            {"upstreams": state.upstreams, "sticky": state.sticky, "log": state.log}
+            {
+                "upstreams": state.upstreams,
+                "sticky": state.sticky,
+                "down": sorted(state.down),
+                "log": state.log,
+            }
         )
 
     async def config(request: Request) -> Response:
@@ -95,7 +123,18 @@ def create_proxy_app(state: ProxyState) -> Starlette:
         if "upstreams" in data:
             state.upstreams = list(data["upstreams"])
             state.affinity.clear()
+            state.down.clear()
         return JSONResponse({"upstreams": state.upstreams})
+
+    async def kill(request: Request) -> Response:
+        data = await request.json()
+        state.down.add(int(data["instance"]))
+        return JSONResponse({"down": sorted(state.down)})
+
+    async def revive(request: Request) -> Response:
+        data = await request.json()
+        state.down.discard(int(data["instance"]))
+        return JSONResponse({"down": sorted(state.down)})
 
     return Starlette(
         routes=[
@@ -103,6 +142,8 @@ def create_proxy_app(state: ProxyState) -> Starlette:
             Route("/log", log),
             Route("/config", config, methods=["POST"]),
             Route("/target", target, methods=["POST"]),
+            Route("/kill", kill, methods=["POST"]),
+            Route("/revive", revive, methods=["POST"]),
             Route("/mcp", forward, methods=["GET", "POST", "DELETE"]),
             Route("/mcp/{rest:path}", forward, methods=["GET", "POST", "DELETE"]),
         ]

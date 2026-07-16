@@ -24,10 +24,27 @@ class Settings(BaseSettings):
     sticky: bool = False
 
     # client / ui
-    proxy_url: str = ""
+    proxy_base: str = "http://127.0.0.1:9000"
+    legacy_upstreams: str = ""
+    modern_upstreams: str = ""
+    ui_auth: str = ""
+
+    @staticmethod
+    def _split(value: str) -> list[str]:
+        return [u.strip() for u in value.split(",") if u.strip()]
 
     def upstream_list(self) -> list[str]:
-        return [u.strip() for u in self.upstreams.split(",") if u.strip()]
+        return self._split(self.upstreams)
+
+    def legacy_list(self) -> list[str]:
+        return self._split(self.legacy_upstreams)
+
+    def modern_list(self) -> list[str]:
+        return self._split(self.modern_upstreams)
+
+    @property
+    def mcp_url(self) -> str:
+        return self.proxy_base.rstrip("/") + "/mcp"
 
 
 def get_settings() -> Settings:

@@ -1,0 +1,62 @@
+# Local full stack: 2 legacy + 2 modern server instances, our proxy, and the Gradio UI.
+# One image, role chosen per service by `command`. Reads DATABASE_URL / TOKEN_SECRET from .env.
+#   docker compose up   ->   open http://localhost:7860
+
+x-server-env: &server-env
+  PORT: "8000"
+  DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+  TOKEN_SECRET: ${TOKEN_SECRET:?set TOKEN_SECRET in .env}
+
+x-server: &server
+  build: .
+  command: ["python", "-m", "mcp_stateless_demo.server"]
+  restart: unless-stopped
+
+services:
+  server-legacy-a:
+    <<: *server
+    environment:
+      <<: *server-env
+      STATELESS_MODE: "0"
+      INSTANCE_ID: legacy-a
+  server-legacy-b:
+    <<: *server
+    environment:
+      <<: *server-env
+      STATELESS_MODE: "0"
+      INSTANCE_ID: legacy-b
+  server-modern-a:
+    <<: *server
+    environment:
+      <<: *server-env
+      STATELESS_MODE: "1"
+      INSTANCE_ID: modern-a
+  server-modern-b:
+    <<: *server
+    environment:
+      <<: *server-env
+      STATELESS_MODE: "1"
+      INSTANCE_ID: modern-b
+
+  proxy:
+    build: .
+    command: ["python", "-m", "mcp_stateless_demo.proxy"]
+    restart: unless-stopped
+    environment:
+      PORT: "9000"
+      UPSTREAMS: "http://server-legacy-a:8000,http://server-legacy-b:8000"
+    depends_on: [server-legacy-a, server-legacy-b, server-modern-a, server-modern-b]
+
+  ui:
+    build: .
+    command: ["python", "-m", "mcp_stateless_demo.ui"]
+    restart: unless-stopped
+    environment:
+      PORT: "7860"
+      PROXY_BASE: "http://proxy:9000"
+      LEGACY_UPSTREAMS: "http://server-legacy-a:8000,http://server-legacy-b:8000"
+      MODERN_UPSTREAMS: "http://server-modern-a:8000,http://server-modern-b:8000"
+      UI_AUTH: ${UI_AUTH:-}
+    ports:
+      - "7860:7860"
+    depends_on: [proxy]

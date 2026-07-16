@@ -24,8 +24,7 @@ def _print_act(result: ActResult) -> None:
 
 async def _main(mode: str, blast: int) -> None:
     settings = get_settings()
-    proxy_url = settings.proxy_url or "http://127.0.0.1:9000/mcp"
-    runner = ActRunner(proxy_url)
+    runner = ActRunner(settings.mcp_url)
     if blast:
         result = await runner.run_blast(blast)
         print(f"blast: {result.ok}/{result.total} ok across instances {result.instances}")

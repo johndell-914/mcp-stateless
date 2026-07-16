@@ -123,3 +123,22 @@ async def test_sticky_recovers_legacy() -> None:
             assert not added.is_error
             cart = _payload(await client.call_tool("get_cart", {"cart_token": token}))
     assert [i["name"] for i in cart["items"]] == ["apple"]
+
+
+async def test_sticky_kill_loses_session() -> None:
+    """Kill the instance holding a sticky session -> the session is lost (sticky's ceiling)."""
+    failed = False
+    async with cluster(stateless=False, sticky=True) as (url, state):
+        async with Client(url, mode="legacy") as client:
+            create = await client.call_tool("create_cart", {})
+            assert not create.is_error
+            token = _payload(create)["cart_token"]
+            assert state.affinity, "sticky affinity should be learned from initialize"
+            owner = next(iter(state.affinity.values()))
+            state.down.add(owner)  # kill the pod that owns the session
+            try:
+                result = await client.call_tool("add_item", {"cart_token": token, "name": "apple"})
+                failed = result.is_error
+            except Exception:
+                failed = True
+    assert failed, "killing the session owner must lose the session"

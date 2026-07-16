@@ -10,7 +10,7 @@ dependencies = [
     "httpx2",
     "asyncpg>=0.30",
     "pydantic-settings>=2.7",
-    # gradio is added in build phase 5 (UI) — pinned per GRADIO_COMPAT.md
+    "gradio>=6.20,<7",
 ]
 
 [project.optional-dependencies]

@@ -11,6 +11,8 @@ x-server: &server
   build: .
   command: ["python", "-m", "mcp_stateless_demo.server"]
   restart: unless-stopped
+  volumes:
+    - ./src:/app/src  # editable install: edit code + `docker compose restart` to iterate, no rebuild
 
 services:
   server-legacy-a:
@@ -42,6 +44,8 @@ services:
     build: .
     command: ["python", "-m", "mcp_stateless_demo.proxy"]
     restart: unless-stopped
+    volumes:
+      - ./src:/app/src
     environment:
       PORT: "9000"
       UPSTREAMS: "http://server-legacy-a:8000,http://server-legacy-b:8000"
@@ -51,6 +55,8 @@ services:
     build: .
     command: ["python", "-m", "mcp_stateless_demo.ui"]
     restart: unless-stopped
+    volumes:
+      - ./src:/app/src
     environment:
       PORT: "7860"
       PROXY_BASE: "http://proxy:9000"

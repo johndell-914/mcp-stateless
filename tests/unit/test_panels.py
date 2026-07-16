@@ -40,7 +40,7 @@ def test_architecture_shows_down_instance() -> None:
 
 
 def test_whats_missing() -> None:
-    html = panels.render_whats_missing(sticky=False, session_store=False, instances=10)
+    html = panels.render_whats_missing(sticky=False, instances=10)
     assert "sticky routing" in html and "10" in html
 
 

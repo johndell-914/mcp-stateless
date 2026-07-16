@@ -51,7 +51,7 @@ class Demo:
         return (
             panels.render_results_table(result),
             panels.render_architecture("before", _names(len(self.legacy)), down),
-            panels.render_whats_missing(sticky, False, len(self.legacy)),
+            panels.render_whats_missing(sticky, len(self.legacy)),
         )
 
     async def run_after(self) -> tuple[str, str, str]:
@@ -61,7 +61,7 @@ class Demo:
         return (
             panels.render_results_table(result),
             panels.render_architecture("after", _names(len(self.modern))),
-            panels.render_whats_missing(False, False, len(self.modern)),
+            panels.render_whats_missing(False, len(self.modern)),
         )
 
     async def kill(self) -> str:
@@ -85,7 +85,7 @@ class Demo:
             "&mdash; zero sticky, zero session store</div>"
         )
         served = len(result.instances) or len(self.modern)
-        return summary, panels.render_whats_missing(False, False, served)
+        return summary, panels.render_whats_missing(False, served)
 
 
 def build_demo(settings: Settings | None = None) -> gr.Blocks:
@@ -106,7 +106,7 @@ def build_demo(settings: Settings | None = None) -> gr.Blocks:
             blast_btn = gr.Button("⚡ Blast ×50")
         with gr.Row():
             table = gr.HTML()
-            missing = gr.HTML(panels.render_whats_missing(False, False, len(demo_state.legacy)))
+            missing = gr.HTML(panels.render_whats_missing(False, len(demo_state.legacy)))
         gr.Markdown("### What changed in the code")
         gr.HTML(panels.render_change_panel())
 

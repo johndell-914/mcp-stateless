@@ -16,7 +16,7 @@ _INK = "#1f2937"
 _MUTED = "#6b7280"
 _BORDER = "#e5e7eb"
 _AMBER = "#f59e0b"
-_CARD = "border:1px solid #e5e7eb;border-radius:12px;padding:16px;background:#ffffff"
+_CARD = "border:1px solid #e5e7eb;border-radius:12px;padding:16px;background:#ffffff;color:#1f2937"
 
 
 def _instance_badge(name: str | None, *, down: bool = False) -> str:
@@ -39,13 +39,14 @@ def render_results_table(result: ActResult) -> str:
         mark = f'<b style="color:{_OK}">OK</b>' if ok else f'<b style="color:{_ERR}">FAIL</b>'
         if ok:
             cart = ", ".join(f'{i["name"]}×{i["qty"]}' for i in (r.cart or [])) or "(empty)"
-            detail = cart
+            detail = f'<span style="color:{_INK}">{cart}</span>'
         else:
             detail = f'<span style="color:{_ERR}">{r.error or "error"}</span>'
         rows.append(
             f'<tr style="background:{bg}">'
             f'<td style="padding:6px 10px;color:{_MUTED}">{r.n}</td>'
-            f'<td style="padding:6px 10px;font:600 13px ui-monospace,monospace">{r.tool}</td>'
+            f'<td style="padding:6px 10px;font:600 13px ui-monospace,monospace;'
+            f'color:{_INK}">{r.tool}</td>'
             f"<td style=\"padding:6px 10px\">{_instance_badge(r.served_by)}</td>"
             f'<td style="padding:6px 10px">{detail}</td>'
             f'<td style="padding:6px 10px">{mark}</td>'
@@ -73,19 +74,20 @@ def render_architecture(phase: str, instances: list[str], down: list[str] | None
     boxes = "".join(
         f'<div style="{_CARD};text-align:center;min-width:88px;'
         f'{"opacity:.5" if i in down else ""}">🖥️<br>'
-        f'<span style="font:600 12px ui-monospace,monospace">{i}</span>'
+        f'<span style="font:600 12px ui-monospace,monospace;color:{_INK}">{i}</span>'
         f'{"<br><span style=color:#ef4444;font-size:11px>down</span>" if i in down else ""}</div>'
         for i in instances
     )
     if before:
         lb = (
             f'<div style="{_CARD};text-align:center;border-color:{_AMBER}">'
-            f'🔀 <b>Sticky LB</b><br><span style="color:{_MUTED};font-size:11px">'
+            f'🔀 <b style="color:{_INK}">Sticky LB</b><br>'
+            f'<span style="color:{_MUTED};font-size:11px">'
             f"inspects mcp-session-id<br>on every request</span></div>"
         )
         extra = (
             f'<div style="{_CARD};text-align:center;border-color:{_AMBER};background:#fffbeb">'
-            f"🗄️ <b>Redis</b><br>"
+            f'🗄️ <b style="color:{_INK}">Redis</b><br>'
             f'<span style="color:{_MUTED};font-size:11px">session store</span></div>'
         )
         tax = (
@@ -96,7 +98,8 @@ def render_architecture(phase: str, instances: list[str], down: list[str] | None
     else:
         lb = (
             f'<div style="{_CARD};text-align:center;border-color:{_OK}">'
-            f'⚖️ <b>Round-robin LB</b><br><span style="color:{_MUTED};font-size:11px">'
+            f'⚖️ <b style="color:{_INK}">Round-robin LB</b><br>'
+            f'<span style="color:{_MUTED};font-size:11px">'
             f"any request → any instance</span></div>"
         )
         extra = (
@@ -114,7 +117,7 @@ def render_architecture(phase: str, instances: list[str], down: list[str] | None
         f'<div style="{_CARD};border-color:{border}">'
         f'<div style="font:700 14px system-ui;color:{_INK};margin-bottom:12px">{title}</div>'
         f'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
-        f'<div style="{_CARD};text-align:center">💻<br><b>Client</b></div>'
+        f'<div style="{_CARD};text-align:center">💻<br><b style="color:{_INK}">Client</b></div>'
         f'<div style="color:{_MUTED};font-size:20px">→</div>{lb}'
         f'<div style="color:{_MUTED};font-size:20px">→</div>'
         f'<div style="display:flex;gap:10px">{boxes}</div>'
@@ -122,24 +125,34 @@ def render_architecture(phase: str, instances: list[str], down: list[str] | None
     )
 
 
-def render_whats_missing(sticky: bool, session_store: bool, instances: int) -> str:
-    def line(label: str, present: bool) -> str:
-        on = f'<span style="color:{_OK}">ON</span>'
-        off = f'<span style="color:{_ERR}">OFF</span>'
-        icon = on if present else off
-        return f'<div style="display:flex;justify-content:space-between;padding:4px 0">' \
-               f'<span style="color:{_INK}">{label}</span>{icon}</div>'
+def render_whats_missing(sticky: bool, instances: int) -> str:
+    sticky_state = (
+        f'<span style="color:{_OK}">ON</span>'
+        if sticky
+        else f'<span style="color:{_MUTED}">off</span>'
+    )
+    na = f'<span style="color:{_MUTED}">n/a</span>'
+    count = f'<span style="color:#4f46e5">{instances}</span>'
 
+    def row(label: str, value: str) -> str:
+        return (
+            '<div style="display:flex;justify-content:space-between;padding:4px 0">'
+            f'<span style="color:{_INK}">{label}</span>{value}</div>'
+        )
+
+    # A shared session store is never a lever here: it can't rescue the protocol session.
+    caption = (
+        f'<div style="color:{_MUTED};font-size:11px;padding:0 0 6px 0">'
+        "&mdash; can&rsquo;t rescue the protocol session</div>"
+    )
     return (
         f'<div style="{_CARD}">'
         f'<div style="font:600 14px system-ui;color:{_INK};margin-bottom:8px">What is running</div>'
         f'<div style="font:13px ui-monospace,monospace">'
-        f"{line('sticky routing', sticky)}"
-        f"{line('shared session store', session_store)}"
-        f'<div style="display:flex;justify-content:space-between;padding:4px 0">'
-        f'<span style="color:{_INK}">instances</span>'
-        f'<span style="color:#4f46e5">{instances}</span></div>'
-        f"</div></div>"
+        f"{row('sticky routing', sticky_state)}"
+        f"{row('shared session store', na)}{caption}"
+        f"{row('instances', count)}"
+        "</div></div>"
     )
 
 

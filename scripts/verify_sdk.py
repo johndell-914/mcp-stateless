@@ -79,7 +79,10 @@ def main() -> int:
             "StreamableHTTPTransport(url=...)",
             "url" in inspect.signature(transport.__init__).parameters,
         )
-        _req("MCP_SESSION_ID == 'mcp-session-id'", getattr(shttp, "MCP_SESSION_ID", None) == "mcp-session-id")
+        _req(
+            "MCP_SESSION_ID == 'mcp-session-id'",
+            getattr(shttp, "MCP_SESSION_ID", None) == "mcp-session-id",
+        )
         _req(
             "MCP_PROTOCOL_VERSION_HEADER == 'mcp-protocol-version'",
             getattr(shttp, "MCP_PROTOCOL_VERSION_HEADER", None) == "mcp-protocol-version",
@@ -92,7 +95,10 @@ def main() -> int:
         probe = importlib.import_module("mcp.client._probe")
         modern = getattr(probe, "MODERN_PROTOCOL_VERSIONS", ())
         _req("MODERN_PROTOCOL_VERSIONS contains '2026-07-28'", "2026-07-28" in modern, str(modern))
-        _req("LATEST_MODERN_VERSION == '2026-07-28'", getattr(probe, "LATEST_MODERN_VERSION", None) == "2026-07-28")
+        _req(
+            "LATEST_MODERN_VERSION == '2026-07-28'",
+            getattr(probe, "LATEST_MODERN_VERSION", None) == "2026-07-28",
+        )
         _req(
             "legacy handshake versions present ('2025-11-25')",
             "2025-11-25" in getattr(probe, "HANDSHAKE_PROTOCOL_VERSIONS", ()),

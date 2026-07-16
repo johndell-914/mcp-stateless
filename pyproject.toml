@@ -7,7 +7,7 @@ dependencies = [
     "mcp[cli]==2.0.0b2",
     "starlette",
     "uvicorn",
-    "httpx",
+    "httpx2",
     "asyncpg>=0.30",
     "pydantic-settings>=2.7",
     # gradio is added in build phase 5 (UI) — pinned per GRADIO_COMPAT.md

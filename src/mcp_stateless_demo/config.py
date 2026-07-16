@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     upstreams: str = ""
     sticky: bool = False
 
+    # client / ui
+    proxy_url: str = ""
+
     def upstream_list(self) -> list[str]:
         return [u.strip() for u in self.upstreams.split(",") if u.strip()]
 

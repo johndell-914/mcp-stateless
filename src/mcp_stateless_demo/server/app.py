@@ -9,6 +9,7 @@ proxy can stay a simple JSON pass-through.
 from __future__ import annotations
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.streamable_http import TransportSecuritySettings
 from starlette.applications import Starlette
 
 from ..cart.store import CartStore
@@ -24,4 +25,7 @@ def build_app(settings: Settings, store: CartStore) -> Starlette:
     return server.streamable_http_app(
         stateless_http=settings.stateless_mode,  # the one line that changes between acts
         json_response=True,
+        # Servers sit behind our proxy on an internal network (Docker / Cloud Run), so accept
+        # the forwarded Host header instead of only localhost. Constant across both acts.
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )

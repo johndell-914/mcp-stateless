@@ -19,3 +19,10 @@ dist/
 
 # Local editor / assistant state
 .claude/
+
+# Scratch / build artifacts (anchored to root — must NOT match __init__.py etc.)
+/_artifact_body.html
+/_shot*.png
+/_variant.html
+/_check.js
+/_val.js

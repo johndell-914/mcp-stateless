@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP goes stateless — architecture</title>
+<style>
+:root{
+  --bg:#0a0c12; --surface:#12151d; --card:#171b26; --card2:#1c2130;
+  --border:#232838; --border2:#2f3648;
+  --text:#e6ebf5; --muted:#8b94a7; --faint:#5b647a;
+  --accent:#818cf8; --accent-glow:rgba(129,140,248,.28);
+  --amber:#f59e0b; --amber-glow:rgba(245,158,11,.20);
+  --ok:#10b981; --ok-glow:rgba(16,185,129,.22);
+  --warn:#f43f5e; --warn-glow:rgba(244,63,94,.20);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--sans);background:
+  radial-gradient(1200px 600px at 50% -10%,#141a2b 0%,var(--bg) 60%);
+  color:var(--text);min-height:100vh;padding:26px 20px 48px;line-height:1.5;}
+.wrap{max-width:1180px;margin:0 auto;}
+
+/* header */
+.header{text-align:center;margin-bottom:18px;}
+.header h1{font-size:1.5em;font-weight:800;letter-spacing:-.02em;}
+.header h1 .accent{color:var(--accent);}
+.header .sub{color:var(--muted);font-size:.86em;margin-top:6px;}
+.header .tech{margin-top:8px;font:600 .68em var(--mono);letter-spacing:.06em;color:var(--faint);}
+
+/* tab bar */
+.tabbar{display:flex;align-items:center;gap:12px;margin:18px 0;flex-wrap:wrap;justify-content:center;}
+.toggle{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border2);
+  border-radius:999px;padding:5px 6px;cursor:pointer;user-select:none;}
+.toggle .opt{font:600 .72em var(--sans);color:var(--muted);padding:4px 11px;border-radius:999px;transition:.2s;}
+.toggle .opt.on{background:var(--accent);color:#0a0c12;}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+.tab{padding:8px 16px;border-radius:8px;border:1px solid var(--border2);background:var(--card);
+  color:var(--muted);font:600 .84em var(--sans);cursor:pointer;transition:.2s;display:flex;align-items:center;gap:7px;}
+.tab:hover:not(.active){background:var(--card2);color:var(--text);}
+.tab.active{color:#0a0c12;}
+.tab.active[data-tone=warn]{background:var(--warn);border-color:var(--warn);}
+.tab.active[data-tone=ok]{background:var(--ok);border-color:var(--ok);}
+.tab.active[data-tone=accent]{background:var(--accent);border-color:var(--accent);}
+.tab.active[data-tone=amber]{background:var(--amber);border-color:var(--amber);}
+
+/* diagram */
+.stage-title{text-align:center;font:700 .7em var(--sans);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);margin:2px 0 14px;}
+.diagram{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:26px 22px;overflow-x:auto;}
+.flow{display:flex;align-items:center;gap:6px;min-width:min-content;justify-content:center;}
+.col{display:flex;flex-direction:column;gap:14px;align-items:center;}
+.arrow{color:var(--faint);font-size:1.5em;flex:0 0 auto;transition:.3s;padding:0 2px;opacity:.5;}
+.arrow.lit{opacity:1;transform:scale(1.15);}
+.arrow.lit[data-k=warn]{color:var(--warn);} .arrow.lit[data-k=ok]{color:var(--ok);}
+.arrow.lit[data-k=amber]{color:var(--amber);} .arrow.lit[data-k=accent]{color:var(--accent);}
+
+.node{background:var(--card);border:1.6px solid var(--border2);border-radius:11px;
+  padding:12px 13px;min-width:118px;text-align:center;transition:border-color .3s,box-shadow .3s,background .3s,opacity .3s;}
+.node .ic{font-size:1.35em;}
+.node .nm{font:700 .82em var(--sans);margin-top:3px;}
+.node .sb{font:.68em var(--mono);color:var(--muted);margin-top:4px;line-height:1.45;}
+.node .tag{display:inline-block;margin-top:7px;font:700 .58em var(--sans);letter-spacing:.06em;
+  text-transform:uppercase;padding:2px 7px;border-radius:5px;}
+.node[data-tone=amber] .tag{background:var(--amber-glow);color:var(--amber);}
+.node[data-tone=ok] .tag{background:var(--ok-glow);color:var(--ok);}
+.node[data-tone=warn] .tag{background:var(--warn-glow);color:var(--warn);}
+.node[data-tone=accent] .tag{background:var(--accent-glow);color:var(--accent);}
+.node.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 22px var(--accent-glow);}
+.node.active[data-tone=amber]{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 0 22px var(--amber-glow);}
+.node.active[data-tone=ok]{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok),0 0 22px var(--ok-glow);}
+.node.active[data-tone=warn]{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn),0 0 22px var(--warn-glow);}
+.node.ghost{opacity:.3;border-style:dashed;filter:grayscale(.4);}
+.node.ghost .tag{opacity:.5;}
+
+/* step panel */
+.step{background:var(--surface);border:1px solid var(--border);border-radius:14px;margin-top:16px;
+  padding:20px 22px;display:flex;gap:20px;align-items:flex-start;}
+.step .num{flex:0 0 auto;width:40px;height:40px;border-radius:10px;background:var(--card2);
+  border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;
+  font:800 1.05em var(--sans);color:var(--accent);}
+.step .body{flex:1;min-width:0;}
+.step .st-title{font:700 1.05em var(--sans);margin-bottom:5px;}
+.step .st-desc{color:var(--muted);font-size:.94em;}
+.step .st-desc code{font:.9em var(--mono);background:var(--card2);color:#c7d2fe;padding:1px 6px;border-radius:5px;}
+.step .code{margin-top:12px;background:#0b0e16;border:1px solid var(--border);border-radius:9px;
+  padding:12px 14px;font:.82em/1.7 var(--mono);overflow-x:auto;}
+.code .del{color:var(--warn);} .code .add{color:var(--ok);} .code .cmt{color:var(--faint);}
+.nav{display:flex;align-items:center;gap:14px;margin-top:16px;justify-content:center;}
+.nav button{background:var(--card);border:1px solid var(--border2);color:var(--text);
+  font:600 .85em var(--sans);padding:8px 18px;border-radius:8px;cursor:pointer;transition:.2s;}
+.nav button:hover:not(:disabled){background:var(--card2);border-color:var(--accent);}
+.nav button:disabled{opacity:.35;cursor:default;}
+.dots{display:flex;gap:7px;}
+.dot{width:8px;height:8px;border-radius:999px;background:var(--border2);cursor:pointer;transition:.2s;}
+.dot.on{background:var(--accent);transform:scale(1.25);}
+.footer{text-align:center;color:var(--faint);font-size:.75em;margin-top:22px;}
+.footer code{font-family:var(--mono);color:var(--muted);}
+</style>
+</head>
+<body class="nt">
+<div class="wrap">
+  <div class="header">
+    <h1>MCP goes <span class="accent">stateless</span> at the protocol layer</h1>
+    <div class="sub">Same shopping-assistant agent, same load balancer — walk the four steps and watch where the session lives.</div>
+    <div class="tech">2026-07-28 release candidate · streamable-http · explicit-handle pattern</div>
+  </div>
+
+  <div class="tabbar">
+    <div class="toggle" id="toggle" title="Switch audience level">
+      <span class="opt" data-m="tech">Technical</span>
+      <span class="opt on" data-m="nt">Plain</span>
+    </div>
+    <div class="tabs" id="tabs"></div>
+  </div>
+
+  <div class="stage-title" id="stageTitle"></div>
+  <div class="diagram"><div class="flow" id="flow"></div></div>
+
+  <div class="step">
+    <div class="num" id="stNum">1</div>
+    <div class="body">
+      <div class="st-title" id="stTitle"></div>
+      <div class="st-desc" id="stDesc"></div>
+      <div id="stCode"></div>
+    </div>
+  </div>
+  <div class="nav">
+    <button id="prev">‹ Prev</button>
+    <div class="dots" id="dots"></div>
+    <button id="next">Next ›</button>
+  </div>
+
+  <div class="footer">
+    Live demo drives this for real on Google Cloud Run · <code>github.com/johndell-914/mcp-stateless</code>
+  </div>
+</div>
+
+<script>
+// ── node library (per tab) ─────────────────────────────────────────────────────────────
+const N = {
+  agent:   {ic:'🧑‍💻', nm:'Agent',        tech:'MCP client · one session', nt:'A person’s AI assistant, mid-conversation'},
+  agents:  {ic:'🧑‍💻', nm:'60 agents',    tech:'concurrent MCP clients',   nt:'Lots of people, all chatting at once'},
+  rr:      {ic:'⚖️', nm:'Round-robin LB', tech:'any request → any instance', nt:'A plain load balancer — no special rules'},
+  sticky:  {ic:'🔀', nm:'Sticky gateway', tech:'inspects mcp-session-id', nt:'A traffic cop that must remember every conversation', tone:'amber', tag:'the tax'},
+  store:   {ic:'🗄️', nm:'Session store',  tech:'Redis — survives restarts', nt:'An extra database just to hold conversations', tone:'amber', tag:'to own'},
+  cloud:   {ic:'☁️', nm:'Cloud Run LB',   tech:'autoscales · concurrency=1', nt:'Google’s load balancer that adds servers on demand', tone:'ok'},
+  db:      {ic:'🐘', nm:'Postgres',       tech:'carts, keyed by token', nt:'The real database — where the cart actually lives'},
+  logs:    {ic:'📜', nm:'Cloud Run logs', tech:'N distinct instanceIds', nt:'The platform’s own receipts — proof it really happened', tone:'ok'},
+  instA:   {ic:'🖥️', nm:'Instance A',     tech:'holds session A in memory', nt:'Server #1'},
+  instB:   {ic:'🖥️', nm:'Instance B',     tech:'never saw session A', nt:'Server #2'},
+  instBbreak:{ic:'🖥️', nm:'Instance B',   tech:'“Session not found”', nt:'Server #2 — has no idea who this is', tone:'warn', tag:'breaks'},
+  mA:      {ic:'🖥️', nm:'Instance A',     tech:'stateless', nt:'Server #1', tone:'ok'},
+  mB:      {ic:'🖥️', nm:'Instance B',     tech:'stateless', nt:'Server #2', tone:'ok'},
+  mC:      {ic:'🖥️', nm:'Instance C',     tech:'stateless', nt:'Server #3', tone:'ok'},
+  scaleN:  {ic:'🖥️', nm:'Instance ×N',    tech:'spun up on demand', nt:'As many servers as the load needs', tone:'ok', tag:'autoscaled'},
+};
+
+// ── tabs: stages (columns of node ids) + steps ─────────────────────────────────────────
+const TABS = {
+  before: {
+    label:'Before', icon:'⚠', tone:'warn',
+    stageTitle:'BEFORE — session-based protocol (today)',
+    stages:[['agent'],['sticky'],['store'],['instA','instBbreak'],['db']],
+    steps:[
+      {on:['agent','instA'], ghost:['sticky','store'], lit:[], k:'accent',
+       t:'Every conversation is a session',
+       tech:'On the old protocol the client calls <code>initialize()</code>, the server mints an <code>Mcp-Session-Id</code>, and that session lives in <b>one instance’s memory</b> (instance A).',
+       nt:'When the assistant starts helping you, the server opens a “session” for you — and that session only exists on the one machine that answered first.'},
+      {on:['agent','instBbreak'], ghost:['sticky','store'], lit:[], k:'warn',
+       t:'Just scale it → it breaks',
+       tech:'Add a second instance behind a plain round-robin LB. With no pinning, the next tool call lands on B, which never saw the session → <b>“Session not found.”</b> That failure is exactly what the gateway below exists to prevent.',
+       nt:'Add a second machine to handle more people. With nothing keeping track, your next message can go to the second machine — which has no idea who you are. The assistant forgets you mid-sentence.'},
+      {on:['sticky','instA'], ghost:['store'], lit:[0], k:'amber',
+       t:'The forced fix: sticky routing',
+       tech:'So you add a <b>session-aware gateway</b> that reads <code>mcp-session-id</code> on every request and pins it back to the instance that owns the session.',
+       nt:'To stop the forgetting, you bolt on a smart traffic cop that memorises which machine holds each conversation and always sends you back to it.'},
+      {on:['store'], ghost:[], lit:[1], k:'amber',
+       t:'…and a shared session store',
+       tech:'One instance restarting would drop every session it held, so you add an external store (Redis) to persist them. More infra to run and pay for.',
+       nt:'And because a machine restarting would wipe all its conversations, you add yet another database just to keep them safe. More to run, more to break.'},
+      {on:['sticky','store'], ghost:[], lit:[1,2], k:'amber',
+       t:'The tax',
+       tech:'A session-aware gateway + a shared store + no free horizontal scaling. Recycle the wrong instance and its live sessions still drop mid-task.',
+       nt:'The bill for making the old way work at scale: two extra pieces of infrastructure to own — and it’s still fragile when a server restarts.'},
+    ]
+  },
+  after: {
+    label:'After', icon:'✅', tone:'ok',
+    stageTitle:'AFTER — stateless protocol (2026-07-28)',
+    stages:[['agent'],['rr'],['mA','mB','mC'],['db']],
+    steps:[
+      {on:['agent'], lit:[], k:'accent',
+       t:'No handshake, no session id',
+       tech:'The 2026-07-28 spec removes <code>initialize</code> and the <code>Mcp-Session-Id</code> header. MCP is now stateless at the protocol layer.',
+       nt:'The new version drops the whole “open a session” step. There’s nothing for a single machine to secretly remember anymore.'},
+      {on:['agent','db'], lit:[0], k:'ok',
+       t:'State moves to an explicit token',
+       tech:'The server mints an opaque <code>cart_token</code> and returns it; the client passes it back as a tool argument. The cart lives in Postgres, addressed by the token.',
+       nt:'Instead, the server hands the assistant a claim-ticket for the cart. The assistant shows the ticket on every request — and the cart itself sits safely in the real database.'},
+      {on:['rr','mA','mB','mC'], lit:[0,1], k:'ok',
+       t:'Any request, any instance',
+       tech:'Because each request carries everything it needs, a plain round-robin LB can send it to <b>any</b> instance. No affinity required.',
+       nt:'Now any machine can handle any message, because the request carries its own claim-ticket. The load balancer can be completely dumb — and that’s the point.'},
+      {on:['rr'], lit:[], k:'ok',
+       t:'Deleted: gateway + store',
+       tech:'No sticky routing, no session-aware gateway, no shared session store. The two boxes from the “before” diagram are gone.',
+       nt:'The smart traffic cop and the extra conversation-database? Both deleted. Less to run, less to pay for, less to break.'},
+    ]
+  },
+  change: {
+    label:'The Change', icon:'🔧', tone:'accent',
+    stageTitle:'THE CHANGE — why it is only two lines',
+    stages:[['agent'],['rr'],['mA','db']],
+    steps:[
+      {on:['mA'], lit:[], k:'accent',
+       t:'Server: one flag',
+       tech:'The entire server difference is a single argument.',
+       nt:'On the server side, you flip one switch. That’s the whole change.',
+       code:'<span class="del">- streamable_http_app(stateless_http=False)</span>\n<span class="add">+ streamable_http_app(stateless_http=True)</span>'},
+      {on:['agent'], lit:[], k:'accent',
+       t:'Client: one mode',
+       tech:'The client opts into the new protocol.',
+       nt:'On the assistant’s side, you pick the new mode. Also one line.',
+       code:'<span class="del">- Client(url, mode="legacy")</span>\n<span class="add">+ Client(url, mode="auto")</span>'},
+      {on:['agent','mA'], lit:[1], k:'accent',
+       t:'Tools: pass the handle',
+       tech:'Tools accept and return the explicit token instead of leaning on session memory.',
+       nt:'The tools now take the claim-ticket as input instead of relying on the server to “just remember.”',
+       code:'<span class="cmt"># before</span>  add_item(item)\n<span class="cmt"># after </span>  add_item(<span class="add">cart_token</span>, item)'},
+      {on:['agent','rr','mA','db'], lit:[0,1], k:'ok',
+       t:'Two lines — because state was already explicit',
+       tech:'It’s small precisely because the app never really needed the session; the protocol was forcing one on it. Move state into the request and the session disappears.',
+       nt:'It’s a tiny change because the app never truly needed the hidden session — the old protocol just insisted on one. Make the state visible and the problem evaporates.'},
+    ]
+  },
+  scale: {
+    label:'At Scale', icon:'⚡', tone:'ok',
+    stageTitle:'AT SCALE — real Cloud Run autoscale, proven by logs',
+    stages:[['agents'],['cloud'],['scaleN'],['db','logs']],
+    steps:[
+      {on:['agents'], lit:[], k:'accent',
+       t:'60 concurrent agents',
+       tech:'Blast 60 simultaneous tool calls straight at the stateless service — no proxy, just Cloud Run.',
+       nt:'Sixty people hit the assistant at the exact same moment — a real crowd, not a simulation.'},
+      {on:['agents','cloud','scaleN'], lit:[0,1], k:'ok',
+       t:'Cloud Run fans out',
+       tech:'With <code>concurrency=1</code>, one instance serves one request at a time, so Cloud Run autoscales — 1 → many instances — to absorb the burst.',
+       nt:'Google’s platform automatically spins up extra servers to handle the rush, then winds them back down. No one configured a thing.'},
+      {on:['scaleN','db'], lit:[2], k:'ok',
+       t:'Every request green',
+       tech:'All 60 succeed, landing across whichever instances exist at that moment. Zero sticky routing, zero session store.',
+       nt:'Every single request succeeds, on whatever server happened to be free — with none of the extra machinery the old way needed.'},
+      {on:['scaleN','logs'], lit:[2], k:'ok',
+       t:'Proven by the platform’s own logs',
+       tech:'Cloud Run’s stdout shows <b>N distinct instanceIds</b> served the burst — evidence from Google, not from us. (Measured: 7 instances for a 60-request blast.)',
+       nt:'And the proof isn’t our word for it — Google’s own logs show a whole set of different servers each did their share.'},
+    ]
+  },
+};
+
+// ── render ─────────────────────────────────────────────────────────────────────────────
+let curTab='before', curStep=0, mode='nt';
+const $=id=>document.getElementById(id);
+
+function buildTabs(){
+  $('tabs').innerHTML='';
+  for(const [k,t] of Object.entries(TABS)){
+    const el=document.createElement('div');
+    el.className='tab'+(k===curTab?' active':'');
+    el.dataset.tone=t.tone;
+    el.innerHTML=`<span>${t.icon}</span>${t.label}`;
+    el.onclick=()=>{curTab=k;curStep=0;render();};
+    $('tabs').appendChild(el);
+  }
+}
+
+function buildFlow(){
+  const t=TABS[curTab];
+  const flow=$('flow'); flow.innerHTML='';
+  t.stages.forEach((col,ci)=>{
+    const c=document.createElement('div'); c.className='col';
+    col.forEach(nid=>{
+      const n=N[nid]; const el=document.createElement('div');
+      el.className='node'; el.dataset.node=nid;
+      if(n.tone) el.dataset.tone=n.tone;
+      const sub = mode==='nt' ? n.nt : n.tech;
+      el.innerHTML=`<div class="ic">${n.ic}</div><div class="nm">${n.nm}</div>`+
+        `<div class="sb">${sub}</div>`+(n.tag?`<div class="tag">${n.tag}</div>`:'');
+      c.appendChild(el);
+    });
+    flow.appendChild(c);
+    if(ci<t.stages.length-1){
+      const a=document.createElement('div'); a.className='arrow'; a.dataset.gap=ci;
+      a.textContent='→'; flow.appendChild(a);
+    }
+  });
+}
+
+function applyStep(){
+  const t=TABS[curTab], s=t.steps[curStep];
+  document.querySelectorAll('.node').forEach(n=>n.classList.remove('active','ghost'));
+  (s.ghost||[]).forEach(nid=>{
+    const el=document.querySelector(`.node[data-node="${nid}"]`); if(el) el.classList.add('ghost');
+  });
+  (s.on||[]).forEach(nid=>{
+    const el=document.querySelector(`.node[data-node="${nid}"]`); if(el) el.classList.add('active');
+  });
+  document.querySelectorAll('.arrow').forEach(a=>{a.classList.remove('lit');a.removeAttribute('data-k');});
+  (s.lit||[]).forEach(gi=>{
+    const a=document.querySelector(`.arrow[data-gap="${gi}"]`);
+    if(a){a.classList.add('lit');a.dataset.k=s.k||'accent';}
+  });
+  $('stNum').textContent=curStep+1;
+  $('stTitle').textContent=s.t;
+  $('stDesc').innerHTML = mode==='nt' ? s.nt : s.tech;
+  $('stCode').innerHTML = s.code ? `<div class="code">${s.code}</div>` : '';
+  // dots
+  $('dots').innerHTML='';
+  t.steps.forEach((_,i)=>{
+    const d=document.createElement('div'); d.className='dot'+(i===curStep?' on':'');
+    d.onclick=()=>{curStep=i;applyStep();}; $('dots').appendChild(d);
+  });
+  $('prev').disabled=curStep===0;
+  $('next').disabled=curStep===t.steps.length-1;
+}
+
+function render(){
+  document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
+  buildTabs();
+  $('stageTitle').textContent=TABS[curTab].stageTitle;
+  buildFlow();
+  applyStep();
+}
+
+$('prev').onclick=()=>{if(curStep>0){curStep--;applyStep();}};
+$('next').onclick=()=>{const t=TABS[curTab];if(curStep<t.steps.length-1){curStep++;applyStep();}};
+$('toggle').onclick=()=>{
+  mode = mode==='nt' ? 'tech' : 'nt';
+  document.body.classList.toggle('nt', mode==='nt');
+  document.querySelectorAll('.toggle .opt').forEach(o=>o.classList.toggle('on', o.dataset.m===mode));
+  buildFlow(); applyStep();
+};
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight') $('next').click();
+  if(e.key==='ArrowLeft') $('prev').click();
+});
+document.body.classList.toggle('nt', mode==='nt');  // sync audience mode on load
+render();
+</script>
+</body>
+</html>

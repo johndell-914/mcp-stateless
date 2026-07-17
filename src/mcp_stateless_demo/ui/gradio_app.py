@@ -212,7 +212,7 @@ class Demo:
 def _svc_short(url: str) -> str:
     """A readable instance name from a Cloud Run URL or host:port (legacy-a, modern-b, …).
 
-    ``https://mcp-stateless-legacy-a-138054047377.us-central1.run.app`` → ``legacy-a``;
+    ``https://mcp-stateless-legacy-a-123456789012.us-central1.run.app`` → ``legacy-a``;
     ``http://server-legacy-a:8000`` (docker) → ``server-legacy-a``.
     """
     host = url.split("//")[-1].split("/")[0].split(":")[0]

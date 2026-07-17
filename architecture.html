@@ -114,6 +114,11 @@ body{font-family:var(--sans);background:
 .node.active[data-tone=warn]{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn),0 0 22px var(--warn-glow);}
 .node.ghost{opacity:.3;border-style:dashed;filter:grayscale(.4);}
 .node.ghost .tag{opacity:.5;}
+/* per-step break state (Before tab, step 2 only) — sticky routing heals it afterward */
+.breaks-badge{display:none;margin-top:7px;font:700 .58em var(--sans);letter-spacing:.06em;
+  text-transform:uppercase;padding:2px 7px;border-radius:5px;background:var(--warn-glow);color:var(--warn);}
+.node.breaking{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn),0 0 22px var(--warn-glow);}
+.node.breaking .breaks-badge{display:inline-block;}
 
 /* step panel */
 .step{background:var(--surface);border:1px solid var(--border);border-radius:14px;margin-top:16px;
@@ -286,9 +291,8 @@ const N = {
   cloud:   {ic:'☁️', nm:'Cloud Run LB',   tech:'autoscales · concurrency=1', nt:'Google’s load balancer that adds servers on demand', tone:'ok'},
   db:      {ic:'🐘', nm:'Supabase',       tech:'managed Postgres · carts keyed by token', nt:'The real database — where the cart actually lives'},
   logs:    {ic:'📜', nm:'Cloud Run logs', tech:'N distinct instanceIds', nt:'The platform’s own receipts — proof it really happened', tone:'ok'},
-  instA:   {ic:'🖥️', nm:'Instance A',     tech:'holds session A in memory', nt:'Server #1'},
-  instB:   {ic:'🖥️', nm:'Instance B',     tech:'never saw session A', nt:'Server #2'},
-  instBbreak:{ic:'🖥️', nm:'Instance B',   tech:'“Session not found”', nt:'Server #2 — has no idea who this is', tone:'warn', tag:'breaks'},
+  instA:   {ic:'🖥️', nm:'Instance A',     tech:'holds session A in memory', nt:'Server #1 · holds the session'},
+  instB:   {ic:'🖥️', nm:'Instance B',     tech:'Server #2', nt:'Server #2', breakTag:'“Session not found”'},
   mA:      {ic:'🖥️', nm:'Instance A',     tech:'stateless', nt:'Server #1', tone:'ok'},
   mB:      {ic:'🖥️', nm:'Instance B',     tech:'stateless', nt:'Server #2', tone:'ok'},
   mC:      {ic:'🖥️', nm:'Instance C',     tech:'stateless', nt:'Server #3', tone:'ok'},
@@ -301,13 +305,13 @@ const TABS = {
   before: {
     label:'Before', icon:'⚠', tone:'warn',
     stageTitle:'BEFORE — session-based protocol (today)',
-    stages:[['agent'],['sticky'],['store'],['instA','instBbreak'],['db']],
+    stages:[['agent'],['sticky'],['store'],['instA','instB'],['db']],
     steps:[
       {on:['agent','instA'], ghost:['sticky','store'], lit:[], k:'accent',
        t:'Every conversation is a session',
        tech:'On the old protocol the client calls <code>initialize()</code>, the server mints an <code>Mcp-Session-Id</code>, and that session lives in <b>one instance’s memory</b> (instance A).',
        nt:'When the assistant starts helping you, the server opens a “session” for you — and that session only exists on the one machine that answered first.'},
-      {on:['agent','instBbreak'], ghost:['sticky','store'], lit:[], k:'warn',
+      {on:['agent','instB'], warn:['instB'], ghost:['sticky','store'], lit:[], k:'warn',
        t:'Just scale it → it breaks',
        tech:'Add a second instance behind a plain round-robin LB. With no pinning, the next tool call lands on B, which never saw the session → <b>“Session not found.”</b> That failure is exactly what the gateway below exists to prevent.',
        nt:'Add a second machine to handle more people. With nothing keeping track, your next message can go to the second machine — which has no idea who you are. The assistant forgets you mid-sentence.'},
@@ -426,7 +430,8 @@ function buildFlow(){
       if(n.tone) el.dataset.tone=n.tone;
       const sub = mode==='nt' ? n.nt : n.tech;
       el.innerHTML=`<div class="ic">${n.ic}</div><div class="nm">${n.nm}</div>`+
-        `<div class="sb">${sub}</div>`+(n.tag?`<div class="tag">${n.tag}</div>`:'');
+        `<div class="sb">${sub}</div>`+(n.tag?`<div class="tag">${n.tag}</div>`:'')+
+        (n.breakTag?`<div class="breaks-badge">${n.breakTag}</div>`:'');
       c.appendChild(el);
     });
     flow.appendChild(c);
@@ -439,9 +444,12 @@ function buildFlow(){
 
 function applyStep(){
   const t=TABS[curTab], s=t.steps[curStep];
-  document.querySelectorAll('.node').forEach(n=>n.classList.remove('active','ghost'));
+  document.querySelectorAll('.node').forEach(n=>n.classList.remove('active','ghost','breaking'));
   (s.ghost||[]).forEach(nid=>{
     const el=document.querySelector(`.node[data-node="${nid}"]`); if(el) el.classList.add('ghost');
+  });
+  (s.warn||[]).forEach(nid=>{
+    const el=document.querySelector(`.node[data-node="${nid}"]`); if(el) el.classList.add('breaking');
   });
   (s.on||[]).forEach(nid=>{
     const el=document.querySelector(`.node[data-node="${nid}"]`); if(el) el.classList.add('active');

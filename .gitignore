@@ -16,3 +16,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Local editor / assistant state
+.claude/

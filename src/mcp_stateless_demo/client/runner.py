@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from mcp import Client
@@ -102,6 +103,47 @@ class ActRunner:
                     RowResult(n=1, tool="connect", ok=False, error=f"{type(exc).__name__}: {exc}")
                 )
         return ActResult(mode=mode, rows=rows)
+
+    async def run_recycle_drop(self, on_pin: Callable[[str], Awaitable[None]]) -> ActResult:
+        """Honest 'sticky is fragile' demo: hold one legacy session, recycle its pinned pod
+        mid-conversation, then keep going on the SAME session.
+
+        With sticky routing the session lives on one instance. ``on_pin`` is called with that
+        instance's name to recycle it; the next call on the held session then finds its pod
+        gone and fails — the mid-task drop, shown for real (not faked). Runs as one act so no
+        client state has to survive across UI clicks.
+        """
+        rows: list[RowResult] = []
+        try:
+            async with Client(self.proxy_url, mode="legacy") as client:
+                r1, p1 = await self._call(client, 1, "create_cart", {})
+                rows.append(r1)
+                token = str(p1.get("cart_token", "")) if p1 else ""
+                pinned = r1.served_by
+                r2, _ = await self._call(
+                    client, 2, "add_item", {"cart_token": token, "name": "apple", "qty": 2}
+                )
+                rows.append(r2)
+                # recycle the pod this session is pinned to, then continue the SAME session
+                if pinned:
+                    await on_pin(pinned)
+                r3, _ = await self._call(
+                    client, 3, "add_item", {"cart_token": token, "name": "banana", "qty": 1}
+                )
+                rows.append(r3)
+                r4, _ = await self._call(client, 4, "get_cart", {"cart_token": token})
+                rows.append(r4)
+                # The post-recycle failures are the pinned pod being gone; the MCP client only
+                # surfaces a generic wrapper, so restate the true, known cause for the screen.
+                for r in (r3, r4):
+                    if not r.ok:
+                        r.error = f"session lost — pod {pinned} was recycled"
+        except Exception as exc:  # noqa: BLE001 — a mid-session drop is a valid demo outcome
+            if not rows:
+                rows.append(
+                    RowResult(n=1, tool="connect", ok=False, error=f"{type(exc).__name__}: {exc}")
+                )
+        return ActResult(mode="legacy-recycle", rows=rows)
 
     async def run_blast(self, total: int = 50) -> BlastResult:
         async def one() -> tuple[bool, str | None]:

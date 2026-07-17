@@ -11,6 +11,7 @@ dependencies = [
     "asyncpg>=0.30",
     "pydantic-settings>=2.7",
     "gradio>=6.20,<7",
+    "google-cloud-logging>=3.11",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +50,10 @@ warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 module = "asyncpg.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "google.cloud.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     database_url: SecretStr = SecretStr("")
     token_secret: SecretStr = SecretStr("")
     instance_id: str = "server"
+    # When True, append a per-process boot id to the served_by name so the N instances of
+    # one autoscaling Cloud Run service are distinguishable in the UI. Fixed single-instance
+    # services leave this off and keep their clean name (legacy-a, modern-a, ...).
+    append_boot_id: bool = False
     stateless_mode: bool = True
     port: int = 8000
 
@@ -28,6 +32,13 @@ class Settings(BaseSettings):
     legacy_upstreams: str = ""
     modern_upstreams: str = ""
     ui_auth: str = ""
+
+    # beat 4 — real Cloud Run autoscale target (hit directly, bypassing the proxy)
+    scale_upstream: str = ""
+    # Cloud Run service names for the live log-proof panel; gcp_project "" = auto-detect via ADC
+    scale_service: str = "mcp-stateless-scale"
+    legacy_services: str = ""
+    gcp_project: str = ""
 
     @staticmethod
     def _split(value: str) -> list[str]:
@@ -42,9 +53,20 @@ class Settings(BaseSettings):
     def modern_list(self) -> list[str]:
         return self._split(self.modern_upstreams)
 
+    def legacy_service_list(self) -> list[str]:
+        return self._split(self.legacy_services)
+
     @property
     def mcp_url(self) -> str:
         return self.proxy_base.rstrip("/") + "/mcp"
+
+    @property
+    def scale_mcp_url(self) -> str:
+        return self.scale_upstream.rstrip("/") + "/mcp"
+
+    @property
+    def gcp_project_or_none(self) -> str | None:
+        return self.gcp_project or None
 
 
 def get_settings() -> Settings:

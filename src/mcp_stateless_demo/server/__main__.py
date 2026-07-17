@@ -9,6 +9,7 @@ import uvicorn
 from ..cart.store_postgres import PostgresCartStore
 from ..config import get_settings
 from .app import build_app
+from .identity import BOOT_ID
 
 
 async def _run() -> None:
@@ -19,7 +20,8 @@ async def _run() -> None:
         uvicorn.Config(app, host="0.0.0.0", port=settings.port, log_level="info")
     )
     print(
-        f"[server] instance={settings.instance_id} "
+        f"[server] instance={settings.instance_id} boot_id={BOOT_ID} "
+        f"append_boot_id={settings.append_boot_id} "
         f"stateless={settings.stateless_mode} port={settings.port}"
     )
     try:

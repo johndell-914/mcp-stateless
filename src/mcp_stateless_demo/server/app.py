@@ -15,13 +15,17 @@ from starlette.applications import Starlette
 from ..cart.store import CartStore
 from ..cart.token import CartTokenCodec
 from ..config import Settings
+from .identity import resolve_instance_name
 from .tools import register_cart_tools
 
 
 def build_app(settings: Settings, store: CartStore) -> Starlette:
     server = MCPServer(name="cart-demo")
     codec = CartTokenCodec(settings.token_secret.get_secret_value())
-    register_cart_tools(server, store, codec, settings.instance_id)
+    instance_name = resolve_instance_name(
+        settings.instance_id, append_boot_id=settings.append_boot_id
+    )
+    register_cart_tools(server, store, codec, instance_name)
     return server.streamable_http_app(
         stateless_http=settings.stateless_mode,  # the one line that changes between acts
         json_response=True,

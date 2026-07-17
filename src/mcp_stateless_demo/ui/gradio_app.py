@@ -1,12 +1,21 @@
-"""The Gradio demo app.
+"""The Gradio demo app — a guided, four-beat narrative.
 
-Thin orchestration over the ActRunner (drives the acts) and the proxy control endpoints
-(sticky / kill / target). All visuals come from ``panels``; this module just wires buttons
-to handlers and returns HTML fragments.
+Thin orchestration over the ActRunner (drives the cart acts + the recycle drop + the
+autoscale blast) and the proxy control endpoints (sticky / target / kill). Every visual
+comes from ``panels``; this module wires buttons to handlers and pulls real Cloud Run logs
+for the proof panels.
+
+Beats:
+  ① Scale it        round-robin, no sticky → "Session not found" (the break)
+  ② The tax         sticky routing + session store → works, but costly
+     💥 Recycle      hold a session, recycle its pod → drops mid-task
+  ③ Go stateless    the 2-line change → works across instances, nothing to own
+  ④ Prove at scale  blast the real autoscaling service → N instances, all green, proven by logs
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")  # NDA: no phone-home
@@ -18,12 +27,9 @@ import gradio as gr
 import httpx2
 
 from ..client.runner import ActRunner
+from ..cloud.logs import LogProof, read_recent
 from ..config import Settings, get_settings
 from . import panels
-
-
-def _names(n: int) -> list[str]:
-    return [f"inst-{i}" for i in range(n)]
 
 
 class Demo:
@@ -32,87 +38,235 @@ class Demo:
         self.legacy = settings.legacy_list() or ["http://127.0.0.1:9101", "http://127.0.0.1:9102"]
         self.modern = settings.modern_list() or ["http://127.0.0.1:9201", "http://127.0.0.1:9202"]
         self.runner = ActRunner(settings.mcp_url)
+        self.scale_runner = ActRunner(settings.scale_mcp_url)
+        self.legacy_svc = settings.legacy_service_list()
+        self.scale_svc = settings.scale_service
+        self.project = settings.gcp_project_or_none
+        self._recycled: str | None = None
 
+    # ── proxy control ──────────────────────────────────────────────────────────────────
     async def _post(self, path: str, payload: dict[str, Any]) -> None:
-        async with httpx2.AsyncClient(timeout=15) as client:
+        async with httpx2.AsyncClient(timeout=20) as client:
             await client.post(self.s.proxy_base.rstrip("/") + path, json=payload)
 
-    async def _down_names(self) -> list[str]:
-        async with httpx2.AsyncClient(timeout=15) as client:
-            resp = await client.get(self.s.proxy_base.rstrip("/") + "/log")
-        names = _names(len(self.legacy))
-        return [names[i] for i in resp.json().get("down", []) if i < len(names)]
+    async def _revive_all(self) -> None:
+        for i in range(len(self.legacy)):
+            await self._post("/revive", {"instance": i})
 
-    async def run_before(self, sticky: bool) -> tuple[str, str, str]:
-        await self._post("/target", {"upstreams": self.legacy})
-        await self._post("/config", {"sticky": sticky})
-        result = await self.runner.run_act("legacy")
-        down = await self._down_names()
+    def _legacy_index(self, name: str | None) -> int | None:
+        for i, url in enumerate(self.legacy):
+            if name and name in url:
+                return i
+        return None
+
+    # ── real-log proof (with ingestion-lag retry) ──────────────────────────────────────
+    async def _pull_logs(
+        self,
+        services: list[str],
+        *,
+        headline: str,
+        subtitle: str,
+        contains: str | None,
+        retries: int = 4,
+        delay: float = 3.0,
+    ) -> str:
+        if not services:
+            return panels.render_log_proof(None, headline=headline, subtitle=subtitle)
+        best: LogProof | None = None
+        for attempt in range(retries):
+            proofs = await asyncio.gather(
+                *[
+                    read_recent(s, project=self.project, minutes=6, limit=300, contains=contains)
+                    for s in services
+                ]
+            )
+            best = _merge(proofs, services[0])
+            if best.ok and best.instances:
+                break
+            if attempt < retries - 1:
+                await asyncio.sleep(delay)
+        return panels.render_log_proof(best, headline=headline, subtitle=subtitle)
+
+    # ── beats ──────────────────────────────────────────────────────────────────────────
+    async def intro(self) -> tuple[str, str, str, str, str]:
         return (
-            panels.render_results_table(result),
-            panels.render_architecture("before", _names(len(self.legacy)), down),
-            panels.render_whats_missing(sticky, len(self.legacy)),
+            panels.render_stepper(0),
+            panels.render_narrative("intro"),
+            panels.render_architecture("before", self.legacy_names()),
+            "",
+            panels.render_log_proof(None, headline="Cloud Run logs"),
         )
 
-    async def run_after(self) -> tuple[str, str, str]:
+    def legacy_names(self) -> list[str]:
+        # Display names = the servers' own INSTANCE_IDs (legacy-a, legacy-b), inferred from URLs.
+        return [_svc_short(u) for u in self.legacy]
+
+    async def beat1_scale(self) -> tuple[str, str, str, str, str]:
+        await self._post("/target", {"upstreams": self.legacy})
+        await self._post("/config", {"sticky": False})
+        await self._revive_all()
+        result = await self.runner.run_act("legacy")
+        logs = await self._pull_logs(
+            self.legacy_svc,
+            headline="Cloud Run logs — legacy instances",
+            subtitle="the misrouted calls hit an instance that never saw the session",
+            contains="POST /mcp",
+        )
+        return (
+            panels.render_stepper(1),
+            panels.render_narrative("scale"),
+            panels.render_architecture("before", self.legacy_names(), served=result.instances),
+            panels.render_results_table(result),
+            logs,
+        )
+
+    async def beat2_sticky(self) -> tuple[str, str, str, str, str]:
+        await self._post("/target", {"upstreams": self.legacy})
+        await self._post("/config", {"sticky": True})
+        await self._revive_all()
+        result = await self.runner.run_act("legacy")
+        return (
+            panels.render_stepper(2),
+            panels.render_narrative("sticky"),
+            panels.render_architecture(
+                "before", self.legacy_names(), sticky=True, store=True, served=result.instances
+            ),
+            panels.render_results_table(result),
+            panels.render_log_proof(
+                None,
+                headline="sticky pins the session",
+                subtitle="every call from this session lands on the same instance — "
+                "see “served by” above. The cost is the gateway + store you now run.",
+            ),
+        )
+
+    async def beat2_recycle(self) -> tuple[str, str, str, str, str]:
+        await self._post("/target", {"upstreams": self.legacy})
+        await self._post("/config", {"sticky": True})
+        await self._revive_all()
+        self._recycled = None
+
+        async def on_pin(name: str) -> None:
+            idx = self._legacy_index(name)
+            if idx is not None:
+                await self._post("/kill", {"instance": idx})
+            self._recycled = name
+
+        result = await self.runner.run_recycle_drop(on_pin)
+        served = [r.served_by for r in result.rows if r.ok and r.served_by]
+        down = [self._recycled] if self._recycled else []
+        await self._revive_all()  # restore the proxy for a re-runnable demo
+        return (
+            panels.render_stepper(2),
+            panels.render_narrative("recycle"),
+            panels.render_architecture(
+                "before", self.legacy_names(), sticky=True, store=True, served=served, down=down
+            ),
+            panels.render_results_table(result),
+            panels.render_log_proof(
+                None,
+                headline="the pinned pod is gone",
+                subtitle="its live session went with it — the console shows the instance disappear",
+            ),
+        )
+
+    async def beat3_stateless(self) -> tuple[str, str, str, str, str]:
         await self._post("/target", {"upstreams": self.modern})
         await self._post("/config", {"sticky": False})
         result = await self.runner.run_act("auto")
         return (
+            panels.render_stepper(3),
+            panels.render_narrative("stateless"),
+            panels.render_architecture("after", self.modern_names(), served=result.instances),
             panels.render_results_table(result),
-            panels.render_architecture("after", _names(len(self.modern))),
-            panels.render_whats_missing(False, len(self.modern)),
+            panels.render_log_proof(
+                None,
+                headline="no gateway, no store",
+                subtitle="the same cart is consistent across instances — state rides in the token",
+            ),
         )
 
-    async def kill(self) -> str:
-        await self._post("/kill", {"instance": 0})
-        down = await self._down_names()
-        return panels.render_architecture("before", _names(len(self.legacy)), down)
+    def modern_names(self) -> list[str]:
+        return [_svc_short(u) for u in self.modern]
 
-    async def revive(self) -> str:
-        await self._post("/revive", {"instance": 0})
-        down = await self._down_names()
-        return panels.render_architecture("before", _names(len(self.legacy)), down)
-
-    async def blast(self) -> tuple[str, str]:
-        await self._post("/target", {"upstreams": self.modern})
-        await self._post("/config", {"sticky": False})
-        result = await self.runner.run_blast(50)
-        summary = (
-            '<div style="border:1px solid #10b981;border-radius:12px;padding:16px;'
-            'font:600 15px system-ui;color:#065f46;background:#ecfdf5">'
-            f"{result.ok}/{result.total} requests green across instances {result.instances} "
-            "&mdash; zero sticky, zero session store</div>"
+    async def beat4_proof(self) -> tuple[str, str, str, str, str]:
+        result = await self.scale_runner.run_blast(60)
+        served = result.instances
+        logs = await self._pull_logs(
+            [self.scale_svc],
+            headline="Cloud Run logs — autoscaled service",
+            subtitle="the platform's own instance ids — many, all serving, all green",
+            contains="POST /mcp",
         )
-        served = len(result.instances) or len(self.modern)
-        return summary, panels.render_whats_missing(False, served)
+        return (
+            panels.render_stepper(4),
+            panels.render_narrative("proof"),
+            panels.render_architecture(
+                "scale", served, served=served, scaling=True
+            ),
+            panels.render_blast_summary(result.ok, result.total, result.instances),
+            logs,
+        )
+
+
+def _svc_short(url: str) -> str:
+    """A readable instance name from a Cloud Run URL or host:port (legacy-a, modern-b, …).
+
+    ``https://mcp-stateless-legacy-a-138054047377.us-central1.run.app`` → ``legacy-a``;
+    ``http://server-legacy-a:8000`` (docker) → ``server-legacy-a``.
+    """
+    host = url.split("//")[-1].split("/")[0].split(":")[0]
+    sub = host.split(".")[0]  # subdomain only — drop the run.app / domain tail
+    if sub.startswith("mcp-stateless-"):
+        sub = sub[len("mcp-stateless-") :]
+    parts = sub.split("-")
+    if len(parts) > 1 and parts[-1].isdigit():  # strip a trailing -<projectnumber>
+        parts = parts[:-1]
+    return "-".join(parts)
+
+
+def _merge(proofs: list[LogProof], service: str) -> LogProof:
+    ok = any(p.ok for p in proofs)
+    lines = [ln for p in proofs for ln in p.lines]
+    lines.sort(key=lambda ln: ln.ts, reverse=True)
+    instances = sorted({i for p in proofs for i in p.instances})
+    err = next((p.error for p in proofs if not p.ok and p.error), None)
+    return LogProof(ok=ok, service=service, lines=lines, instances=instances, error=err)
 
 
 def build_demo(settings: Settings | None = None) -> gr.Blocks:
-    demo_state = Demo(settings or get_settings())
-    initial = _names(len(demo_state.legacy))
+    d = Demo(settings or get_settings())
     with gr.Blocks(title="MCP goes stateless") as demo:
         gr.Markdown(
             "# MCP is now stateless at the protocol layer\n"
-            "Same cart app, same load balancer &mdash; only the protocol changes."
+            "A shopping-assistant agent, one load balancer — walk the four steps and watch "
+            "where the session lives."
         )
-        arch = gr.HTML(panels.render_architecture("before", initial))
-        with gr.Row():
-            before_btn = gr.Button("① Run BEFORE (stateful, round-robin)", variant="primary")
-            sticky = gr.Checkbox(label="sticky routing", value=False)
-            kill_btn = gr.Button("💥 Kill inst-0")
-            revive_btn = gr.Button("Revive inst-0")
-            after_btn = gr.Button("③ Run AFTER (stateless)", variant="primary")
-            blast_btn = gr.Button("⚡ Blast ×50")
-        with gr.Row():
-            table = gr.HTML()
-            missing = gr.HTML(panels.render_whats_missing(False, len(demo_state.legacy)))
-        gr.Markdown("### What changed in the code")
-        gr.HTML(panels.render_change_panel())
+        gr.HTML(panels.render_scenario())
+        stepper = gr.HTML(panels.render_stepper(0))
+        narrative = gr.HTML(panels.render_narrative("intro"))
+        arch = gr.HTML(panels.render_architecture("before", d.legacy_names()))
 
-        before_btn.click(demo_state.run_before, inputs=[sticky], outputs=[table, arch, missing])
-        after_btn.click(demo_state.run_after, outputs=[table, arch, missing])
-        kill_btn.click(demo_state.kill, outputs=[arch])
-        revive_btn.click(demo_state.revive, outputs=[arch])
-        blast_btn.click(demo_state.blast, outputs=[table, missing])
+        with gr.Row():
+            b1 = gr.Button("① Scale it", variant="primary")
+            b2 = gr.Button("② Add the tax (sticky + store)")
+            recycle = gr.Button("💥 Recycle a pod")
+            b3 = gr.Button("③ Go stateless", variant="primary")
+            b4 = gr.Button("④ Prove it at scale ⚡", variant="primary")
+            reset = gr.Button("↺ Reset")
+
+        with gr.Row():
+            table = gr.HTML("")
+            logproof = gr.HTML(panels.render_log_proof(None, headline="Cloud Run logs"))
+
+        with gr.Accordion("What changed in the code — the whole migration", open=False):
+            gr.HTML(panels.render_change_panel())
+
+        outs = [stepper, narrative, arch, table, logproof]
+        b1.click(d.beat1_scale, outputs=outs)
+        b2.click(d.beat2_sticky, outputs=outs)
+        recycle.click(d.beat2_recycle, outputs=outs)
+        b3.click(d.beat3_stateless, outputs=outs)
+        b4.click(d.beat4_proof, outputs=outs)
+        reset.click(d.intro, outputs=outs)
     return demo

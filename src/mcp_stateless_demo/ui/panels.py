@@ -73,7 +73,11 @@ def render_scenario() -> str:
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
         f'<span style="color:{_FAINT};font:12px {_SANS}">🤖 agent calls</span>'
         f"{call('create_cart()')}{call('add_item(apple×2)')}"
-        f"{call('add_item(banana)')}{call('get_cart()')}</div></div></div>"
+        f"{call('add_item(banana)')}{call('get_cart()')}</div></div>"
+        f'<div style="margin-top:11px;font:12.5px/1.5 {_SANS};color:{_MUTED}">'
+        f'<b style="color:{_INK}">A real, live MCP pattern</b> — agentic commerce (Shopify, '
+        "Stripe & others ship remote MCP servers). These three tools are exactly what a commerce "
+        "MCP server exposes; the app was never the problem, the protocol was.</div></div>"
     )
 
 
@@ -434,3 +438,50 @@ def render_change_panel() -> str:
         "Two lines — and it is only two lines because the state was already explicit.</div></div>"
     )
     return f'<div style="display:flex;gap:12px;flex-wrap:wrap">{before}{after}</div>{diff}'
+
+
+def _aaif_mark() -> str:
+    # The real AAIF mark: 4 big circles (2x2) interlocking with a 3x3 grid of small squares.
+    circles = "".join(f'<circle cx="{cx}" cy="{cy}" r="13"/>' for cy in (35, 65) for cx in (35, 65))
+    squares = "".join(
+        f'<rect x="{x}" y="{y}" width="10" height="10" rx="1.5"/>'
+        for y in (11, 45, 79)
+        for x in (11, 45, 79)
+    )
+    return (
+        '<span style="display:inline-flex;background:#0e1420;border-radius:8px;padding:5px;'
+        'line-height:0;box-shadow:0 0 0 1px rgba(255,255,255,.12)">'
+        f'<svg width="24" height="24" viewBox="0 0 100 100" fill="#fff">{circles}{squares}</svg>'
+        "</span>"
+    )
+
+
+def _ms_mark(color: str) -> str:
+    one = f'<span style="width:7px;height:7px;background:{color}"></span>'
+    cells = one * 4
+    return (
+        '<span style="display:inline-grid;grid-template-columns:repeat(2,7px);'
+        f'grid-auto-rows:7px;gap:2px">{cells}</span>'
+    )
+
+
+def render_brand_footer() -> str:
+    """AAIF hosted-by footer — matches the standalone diagram (large pills, no series line)."""
+    pill = (
+        "display:inline-flex;align-items:center;gap:10px;height:44px;padding:0 18px;"
+        f"border:1px solid {_LINE};border-radius:10px;background:{_BG};"
+        f"font:700 14px {_SANS};color:{_INK};white-space:nowrap"
+    )
+    return (
+        f'<div style="{_CARD};margin-top:4px;display:flex;flex-direction:column;'
+        'align-items:center;gap:12px">'
+        '<div style="display:flex;align-items:center;justify-content:center;'
+        'gap:14px;flex-wrap:wrap">'
+        f'<span style="font:700 12px {_SANS};letter-spacing:.1em;color:{_MUTED}">HOSTED BY</span>'
+        f'<span style="{pill}">{_aaif_mark()} Agentic AI Foundation</span>'
+        f'<span style="font:700 11px {_MONO};letter-spacing:.14em;color:{_FAINT}">WITH</span>'
+        f'<span style="{pill}">{_ms_mark(_INK)} Microsoft</span>'
+        f'<span style="{pill}">Opaque</span></div>'
+        f'<span style="font:700 11px {_MONO};letter-spacing:.14em;color:{_FAINT};'
+        'text-align:center">AAIF.IO / COMMUNITY</span></div>'
+    )

@@ -91,3 +91,14 @@ def test_log_proof_states() -> None:
 def test_change_panel() -> None:
     html = panels.render_change_panel()
     assert "stateless_http=True" in html and "cart_token" in html
+
+
+def test_scenario_has_agentic_commerce_framing() -> None:
+    html = panels.render_scenario()
+    assert "agentic commerce" in html and "Shopify" in html
+
+
+def test_brand_footer() -> None:
+    html = panels.render_brand_footer()
+    assert "HOSTED BY" in html and "Agentic AI Foundation" in html
+    assert "Microsoft" in html and "Opaque" in html and "AAIF.IO" in html

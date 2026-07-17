@@ -262,6 +262,8 @@ def build_demo(settings: Settings | None = None) -> gr.Blocks:
         with gr.Accordion("What changed in the code — the whole migration", open=False):
             gr.HTML(panels.render_change_panel())
 
+        gr.HTML(panels.render_brand_footer())
+
         outs = [stepper, narrative, arch, table, logproof]
         b1.click(d.beat1_scale, outputs=outs)
         b2.click(d.beat2_sticky, outputs=outs)

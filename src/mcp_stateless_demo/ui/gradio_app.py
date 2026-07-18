@@ -43,6 +43,7 @@ class Demo:
         self.scale_svc = settings.scale_service
         self.project = settings.gcp_project_or_none
         self._recycled: str | None = None
+        self._log_ctx: tuple[list[str], str, str, str | None] | None = None
 
     # ── proxy control ──────────────────────────────────────────────────────────────────
     async def _post(self, path: str, payload: dict[str, Any]) -> None:
@@ -70,6 +71,9 @@ class Demo:
         retries: int = 4,
         delay: float = 3.0,
     ) -> str:
+        # Remember the last real-log context so the "Refresh logs" button can re-pull it
+        # (Cloud Logging ingestion can lag past the initial retry window).
+        self._log_ctx = (services, headline, subtitle, contains)
         if not services:
             return panels.render_log_proof(None, headline=headline, subtitle=subtitle)
         best: LogProof | None = None
@@ -86,6 +90,18 @@ class Demo:
             if attempt < retries - 1:
                 await asyncio.sleep(delay)
         return panels.render_log_proof(best, headline=headline, subtitle=subtitle)
+
+    async def refresh_logs(self) -> str:
+        """Re-pull the most recent real-log context on demand (ingestion-lag catch-up)."""
+        ctx = getattr(self, "_log_ctx", None)
+        if not ctx:
+            return panels.render_log_proof(
+                None, headline="Cloud Run logs", subtitle="run a step first, then refresh"
+            )
+        services, headline, subtitle, contains = ctx
+        return await self._pull_logs(
+            services, headline=headline, subtitle=subtitle, contains=contains, retries=1
+        )
 
     # ── beats ──────────────────────────────────────────────────────────────────────────
     async def intro(self) -> tuple[str, str, str, str, str]:
@@ -237,27 +253,24 @@ def _merge(proofs: list[LogProof], service: str) -> LogProof:
 def build_demo(settings: Settings | None = None) -> gr.Blocks:
     d = Demo(settings or get_settings())
     with gr.Blocks(title="MCP goes stateless") as demo:
-        gr.Markdown(
-            "# MCP is now stateless at the protocol layer\n"
-            "A shopping-assistant agent, one load balancer — walk the four steps and watch "
-            "where the session lives."
-        )
-        gr.HTML(panels.render_scenario())
-        stepper = gr.HTML(panels.render_stepper(0))
-        narrative = gr.HTML(panels.render_narrative("intro"))
-        arch = gr.HTML(panels.render_architecture("before", d.legacy_names()))
-
-        with gr.Row():
-            b1 = gr.Button("① Scale it", variant="primary")
-            b2 = gr.Button("② Add the tax (sticky + store)")
-            recycle = gr.Button("💥 Recycle a pod")
-            b3 = gr.Button("③ Go stateless", variant="primary")
-            b4 = gr.Button("④ Prove it at scale ⚡", variant="primary")
-            reset = gr.Button("↺ Reset")
-
-        with gr.Row():
-            table = gr.HTML("")
-            logproof = gr.HTML(panels.render_log_proof(None, headline="Cloud Run logs"))
+        gr.Markdown("# MCP is now stateless at the protocol layer")
+        with gr.Row(equal_height=False):
+            with gr.Column(scale=1, min_width=300):
+                with gr.Group():
+                    gr.Markdown("### Run the demo")
+                    b1 = gr.Button("① Scale it", variant="primary")
+                    b2 = gr.Button("② Add the tax (sticky + store)")
+                    recycle = gr.Button("💥 Recycle a pod")
+                    b3 = gr.Button("③ Go stateless", variant="primary")
+                    b4 = gr.Button("④ Prove it at scale ⚡", variant="primary")
+                    refresh = gr.Button("↻ Refresh logs")
+                    reset = gr.Button("↺ Reset")
+            with gr.Column(scale=3):
+                narrative = gr.HTML(panels.render_narrative("intro"))
+                arch = gr.HTML(panels.render_architecture("before", d.legacy_names()))
+                table = gr.HTML("")
+                logproof = gr.HTML(panels.render_log_proof(None, headline="Cloud Run logs"))
+        stepper = gr.HTML(visible=False)  # progress is conveyed by the numbered buttons now
 
         with gr.Accordion("What changed in the code — the whole migration", open=False):
             gr.HTML(panels.render_change_panel())
@@ -270,5 +283,6 @@ def build_demo(settings: Settings | None = None) -> gr.Blocks:
         recycle.click(d.beat2_recycle, outputs=outs)
         b3.click(d.beat3_stateless, outputs=outs)
         b4.click(d.beat4_proof, outputs=outs)
+        refresh.click(d.refresh_logs, outputs=[logproof])
         reset.click(d.intro, outputs=outs)
     return demo

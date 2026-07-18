@@ -15,9 +15,8 @@ def main() -> None:
     if ":" in settings.ui_auth:
         user, password = settings.ui_auth.split(":", 1)
         auth = (user, password)
-    demo.launch(
-        server_name="0.0.0.0", server_port=settings.port, auth=auth, theme=gr.themes.Soft()
-    )
+    theme = gr.themes.Soft(primary_hue="indigo", secondary_hue="slate")
+    demo.launch(server_name="0.0.0.0", server_port=settings.port, auth=auth, theme=theme)
 
 
 if __name__ == "__main__":

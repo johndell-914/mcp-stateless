@@ -183,11 +183,11 @@ def _instance_card(name: str, *, down: bool, served: bool) -> str:
     )
     opacity = "opacity:.45;" if down else ""
     return (
-        f'<div class="{cls}" style="border:1.5px solid {border};border-radius:10px;'
-        f"padding:8px 10px;background:{_BG};text-align:center;min-width:76px;{opacity}"
+        f'<div class="{cls}" style="border:2px solid {border};border-radius:12px;'
+        f"padding:12px 16px;background:{_BG};text-align:center;min-width:104px;{opacity}"
         f'{"text-decoration:line-through;" if down else ""}">'
-        f'<div style="font-size:18px">🖥️</div>'
-        f'<div style="font:600 11px {_MONO};color:{ink};white-space:nowrap">{name}</div>'
+        f'<div style="font-size:26px">🖥️</div>'
+        f'<div style="font:700 13px {_MONO};color:{ink};white-space:nowrap">{name}</div>'
         f"{badge}</div>"
     )
 

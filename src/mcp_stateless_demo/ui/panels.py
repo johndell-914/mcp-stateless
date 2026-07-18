@@ -275,6 +275,14 @@ def render_architecture(
         f'<div style="font-size:18px">🧑‍💻</div>'
         f'<div style="font:600 12px {_SANS};color:{_INK}">agents</div></div>'
     )
+    # The cart always lives in Postgres, addressed by the token — the point of the whole demo.
+    db = (
+        f'<div style="border:1.5px solid {_LINE};border-radius:12px;padding:12px 16px;'
+        f'background:{_BG};text-align:center;min-width:104px">'
+        f'<div style="font-size:26px">🐘</div>'
+        f'<div style="font:700 13px {_SANS};color:{_INK}">Supabase</div>'
+        f'<div style="font:10px {_SANS};color:{_MUTED}">cart lives here</div></div>'
+    )
     return (
         f"{_ANIM}"
         f'<div style="{_CARD};border-color:{border}">'
@@ -283,7 +291,7 @@ def render_architecture(
         f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
         f"{agent}{_arrow()}{lb}"
         f"{(_arrow() + store_card) if store else ''}"
-        f"{_arrow()}{grid}</div>"
+        f"{_arrow()}{grid}{_arrow()}{db}</div>"
         f'<div style="margin-top:12px;color:{cap_c};font:600 13px {_SANS}">{cap}</div>'
         "</div>"
     )

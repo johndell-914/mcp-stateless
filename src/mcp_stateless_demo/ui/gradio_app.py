@@ -265,8 +265,8 @@ def build_demo(settings: Settings | None = None) -> gr.Blocks:
                     b4 = gr.Button("④ Prove it at scale ⚡", variant="primary")
                     refresh = gr.Button("↻ Refresh logs")
                     reset = gr.Button("↺ Reset")
+                narrative = gr.HTML(panels.render_narrative("intro"))  # what the current step does
             with gr.Column(scale=3):
-                narrative = gr.HTML(panels.render_narrative("intro"))
                 arch = gr.HTML(panels.render_architecture("before", d.legacy_names()))
                 table = gr.HTML("")
                 logproof = gr.HTML(panels.render_log_proof(None, headline="Cloud Run logs"))

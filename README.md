@@ -126,7 +126,7 @@ sequenceDiagram
     participant T as Token · cart/token.py
     participant DB as Postgres · cart/store_postgres.py
     A->>P: POST /mcp — tools/call add_item {cart_token, name, qty}
-    P->>S: forward (round-robin / sticky; reads mcp-session-id)
+    P->>S: forward (round-robin / sticky, reads mcp-session-id)
     S->>T: codec.decode(cart_token) → verify HMAC → cart_id
     S->>DB: update carts set items = items || $2 where id = cart_id
     DB-->>S: updated items

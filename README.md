@@ -43,10 +43,11 @@ and the client mode do.
 
 | Surface | What it is | How to view |
 | --- | --- | --- |
-| **Interactive diagram** | Self-contained HTML — Narrative / Before / After / The Change / At Scale tabs, a Technical⇄Plain toggle, light/dark + fullscreen | Open [`MCP-STATELESS-DEMO.html`](MCP-STATELESS-DEMO.html) in any browser (no build, no network) |
+| **Interactive diagram** | Self-contained HTML — Narrative / Before / After / The Change / At Scale / Request Flow tabs, a Technical⇄Plain toggle, light/dark + fullscreen | Open [`MCP-STATELESS-DEMO.html`](MCP-STATELESS-DEMO.html) in any browser (no build, no network) |
+| **Code map** | Self-contained HTML — an architecture diagram of `src/mcp_stateless_demo` (Modules / Tool call / Log proof tabs) for ramping on the code | Open [`mcp-stateless_architecture.html`](mcp-stateless_architecture.html) in any browser |
 | **Live demo** | A Gradio app that drives real MCP servers on Cloud Run and shows live results + real Cloud Run logs | Run locally (below) or deploy your own |
 
-### The four beats
+### The demo, beat by beat
 
 The live demo walks a guided story with the **same three tools** each time:
 
@@ -144,9 +145,16 @@ sequenceDiagram
 
 ---
 
-## Run it locally
+## Prerequisites
 
-You need Docker and a Postgres database (Supabase's free tier works well).
+| To run… | You need |
+| --- | --- |
+| The two diagrams | Just a browser — both `.html` files are self-contained. |
+| The live demo locally | [Docker](https://docs.docker.com/get-docker/) and a Postgres database — [Supabase](https://supabase.com)'s free tier is what this repo assumes. |
+| The dev tooling / smoke test | [uv](https://github.com/astral-sh/uv) and Python 3.11+. |
+| The **full** demo (real autoscale + live logs) | A Google Cloud project with billing and the [`gcloud` CLI](https://cloud.google.com/sdk/docs/install) — see [Deploy to Cloud Run](#deploy-to-cloud-run). |
+
+## Run it locally
 
 ```bash
 # 1. configure
@@ -161,7 +169,40 @@ psql "$DATABASE_URL" -f deploy/db/schema.sql      # or paste it into the Supabas
 docker compose up --build
 ```
 
-Then open **http://localhost:7860** and walk the four beats.
+Then open **http://localhost:7860** and walk the beats.
+
+Want a headless sanity check first? `uv run python scripts/smoke.py` spins up a
+2-instance cluster in-process against your database and asserts the thesis
+(BEFORE = all-red, AFTER = all-green) — the fastest way to confirm your `DATABASE_URL` works.
+
+> **What runs locally vs. what needs Cloud Run.** `docker compose up` is a real
+> multi-instance stack, so beats ①–③ — the scale break, the sticky tax, the mid-task
+> drop, and going stateless — all work locally against distinct process memories. Beat
+> ④ (the *real* autoscale blast) and the live Cloud Run log panels need a deployed
+> autoscaling service and log access; locally they degrade to a friendly "no logs"
+> placeholder. **To present the full story, including the autoscale proof, deploy to
+> Cloud Run first.**
+
+## Presenting the demo
+
+Put two things on screen: the **live demo** (your local or deployed UI) and the
+**interactive diagram** ([`MCP-STATELESS-DEMO.html`](MCP-STATELESS-DEMO.html)) in a second
+window. Click a beat in the app, then switch the diagram to the matching tab so the
+audience watches the architecture change as the behavior changes.
+
+| Beat (button) | Diagram tab | The line to land |
+| --- | --- | --- |
+| **① Scale it** | Before | Round-robin + the old session protocol = *Session not found* — proven by real `404`s across two instance IDs. |
+| **② Add the tax** | Before | Sticky routing fixes it, but now you own a session-aware gateway and a shared store. |
+| **💥 Recycle a pod** | Before | With sticky on, recycle the pod holding a live session and the agent drops mid-task. |
+| **③ Go stateless** | The Change → After | Flip one flag; every request succeeds across instances, nothing extra to own. |
+| **④ Prove it at scale** | At Scale | 60 concurrent agents at a real autoscaling service — Cloud Run fans out to N instances, all green, proven by the platform's own instance IDs. |
+
+Two buttons help you run it live: **↻ Refresh logs** re-pulls the Cloud Run logs (they lag
+a few seconds behind a burst), and **↺ Reset** returns the stack to a clean opening state
+between runs. If a technical attendee wants the code-level view, open the diagram's
+**Request Flow** tab or the separate code map
+([`mcp-stateless_architecture.html`](mcp-stateless_architecture.html)).
 
 ## Development
 
@@ -174,22 +215,75 @@ uv run mypy --strict src/mcp_stateless_demo/cart src/mcp_stateless_demo/client  
 
 ## Deploy to Cloud Run
 
-The `Dockerfile` builds one image; each service picks its role via env vars / command. In
-outline:
-
-1. Build + push the image (Cloud Build → Artifact Registry).
-2. Put `DATABASE_URL` and `TOKEN_SECRET` in Secret Manager; grant the runtime service account
-   `secretmanager.secretAccessor`.
-3. Deploy the four servers (`STATELESS_MODE=0|1`), the proxy (`-m ...proxy`), and the UI
-   (`-m ...ui`), wiring the URLs through env vars.
-
-Once deployed, ship changes with the included script (an image-only redeploy that preserves
-any auth/network settings):
+The full demo — the real autoscale blast (beat ④) and the live Cloud Run log panels —
+runs on Cloud Run. One `Dockerfile` builds a single image; each service picks its role
+from its command + env vars. Set your project and region once:
 
 ```bash
-bash deploy/redeploy.sh                    # rebuild + redeploy the UI
-bash deploy/redeploy.sh mcp-stateless-proxy  # or a specific service
+export PROJECT=$(gcloud config get-value project)
+export REGION=us-central1
+export IMAGE=$REGION-docker.pkg.dev/$PROJECT/mcp-stateless/app:latest
 ```
+
+1. **Create the table** — run `deploy/db/schema.sql` against your Postgres (the Supabase
+   SQL editor works).
+2. **Build + push the image** to Artifact Registry:
+   ```bash
+   gcloud artifacts repositories create mcp-stateless --repository-format=docker --location=$REGION
+   gcloud builds submit --tag $IMAGE .
+   ```
+3. **Store the secrets** and grant the runtime service account
+   `roles/secretmanager.secretAccessor` on each:
+   ```bash
+   printf '%s' "$DATABASE_URL" | gcloud secrets create DATABASE_URL --data-file=-
+   printf '%s' "$TOKEN_SECRET" | gcloud secrets create TOKEN_SECRET --data-file=-
+   ```
+4. **Deploy the four MCP servers** — two legacy (`STATELESS_MODE=0`), two modern
+   (`STATELESS_MODE=1`), each a distinct `INSTANCE_ID`. They use the image's default
+   command:
+   ```bash
+   gcloud run deploy mcp-stateless-legacy-a --image $IMAGE --region $REGION \
+     --set-secrets=DATABASE_URL=DATABASE_URL:latest,TOKEN_SECRET=TOKEN_SECRET:latest \
+     --set-env-vars=STATELESS_MODE=0,INSTANCE_ID=legacy-a --allow-unauthenticated
+   # repeat: legacy-b, then modern-a / modern-b with STATELESS_MODE=1
+   ```
+5. **Deploy the autoscaling `scale` service** — the target beat ④ blasts. One request per
+   instance forces real fan-out:
+   ```bash
+   gcloud run deploy mcp-stateless-scale --image $IMAGE --region $REGION \
+     --set-secrets=DATABASE_URL=DATABASE_URL:latest,TOKEN_SECRET=TOKEN_SECRET:latest \
+     --set-env-vars=STATELESS_MODE=1,INSTANCE_ID=scale,APPEND_BOOT_ID=1 \
+     --concurrency=1 --max-instances=8 --allow-unauthenticated
+   ```
+6. **Deploy the proxy and the UI** — these override the command. Grab each service's URL
+   with `gcloud run services describe <name> --region $REGION --format='value(status.url)'`.
+   Values that contain commas need gcloud's `^@^` delimiter:
+   ```bash
+   gcloud run deploy mcp-stateless-proxy --image $IMAGE --region $REGION \
+     --command=python --args=-m,mcp_stateless_demo.proxy \
+     --set-env-vars="^@^UPSTREAMS=<legacy-a-url>,<legacy-b-url>" --allow-unauthenticated
+
+   gcloud run deploy mcp-stateless-ui --image $IMAGE --region $REGION --memory=1Gi \
+     --command=python --args=-m,mcp_stateless_demo.ui \
+     --set-env-vars="^@^PROXY_BASE=<proxy-url>@LEGACY_UPSTREAMS=<a>,<b>@MODERN_UPSTREAMS=<a>,<b>@SCALE_UPSTREAM=<scale-url>@LEGACY_SERVICES=mcp-stateless-legacy-a,mcp-stateless-legacy-b@GCP_PROJECT=$PROJECT" \
+     --allow-unauthenticated
+   ```
+7. **Grant the UI's runtime service account `roles/logging.viewer`** so the live-log
+   panels can read Cloud Run stdout.
+
+Open the UI's URL and walk the beats. To ship a code change later, the included script
+does an image-only redeploy (preserving env, secrets, and any auth/network settings you
+added):
+
+```bash
+bash deploy/redeploy.sh                       # rebuild + redeploy the UI
+bash deploy/redeploy.sh mcp-stateless-proxy   # or a specific service
+```
+
+> **Hardening (optional).** The backends can run internal-only (VPC ingress) with the UI
+> behind [IAP](https://cloud.google.com/iap). Note the `mcp` client has no header hook, so
+> backend calls are gated at the network layer, not with ID tokens. `deploy/redeploy.sh`
+> is image-only and preserves an IAP/VPC setup across redeploys.
 
 ---
 

@@ -48,6 +48,7 @@ class BlastResult(BaseModel):
     total: int
     ok: int
     instances: list[str]
+    counts: list[tuple[str, int]] = []  # (instance, requests handled), busiest first
 
 
 def _result_text(result: Any) -> str:
@@ -160,5 +161,10 @@ class ActRunner:
 
         results = await asyncio.gather(*[one() for _ in range(total)])
         ok = sum(1 for success, _ in results if success)
-        instances = sorted({inst for success, inst in results if success and inst is not None})
-        return BlastResult(total=total, ok=ok, instances=instances)
+        tally: dict[str, int] = {}
+        for success, inst in results:
+            if success and inst is not None:
+                tally[inst] = tally.get(inst, 0) + 1
+        counts = sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))
+        instances = sorted(tally)
+        return BlastResult(total=total, ok=ok, instances=instances, counts=counts)

@@ -220,7 +220,7 @@ class Demo:
             panels.render_architecture(
                 "scale", served, served=served, scaling=True
             ),
-            panels.render_blast_summary(result.ok, result.total, result.instances),
+            panels.render_blast_summary(result.ok, result.total, result.instances, result.counts),
             logs,
         )
 

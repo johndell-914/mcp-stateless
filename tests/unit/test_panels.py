@@ -74,6 +74,25 @@ def test_blast_summary() -> None:
     assert "60/60" in html and "2</b> autoscaled" in html
 
 
+def test_blast_summary_shows_per_instance_distribution() -> None:
+    html = panels.render_blast_summary(60, 60, ["a", "b"], counts=[("a", 35), ("b", 25)])
+    assert "35 req" in html and "25 req" in html
+
+
+def test_log_proof_colors_and_summarizes_statuses() -> None:
+    proof = LogProof(
+        ok=True,
+        service="s",
+        lines=[
+            LogLine(ts="1", instance="x", text='... "POST /mcp HTTP/1.1" 200 OK'),
+            LogLine(ts="2", instance="y", text='... "POST /mcp HTTP/1.1" 404 Not Found'),
+        ],
+        instances=["x", "y"],
+    )
+    html = panels.render_log_proof(proof, headline="L")
+    assert "#f87171" in html and "1×404" in html and "1×200" in html
+
+
 def test_log_proof_states() -> None:
     assert "run a step" in panels.render_log_proof(None, headline="Logs")
     bad = LogProof(ok=False, service="s", lines=[], instances=[], error="no creds")

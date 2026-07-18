@@ -8,8 +8,10 @@ Gradio theme, and read on a projector from the back of a room.
 
 from __future__ import annotations
 
+import re
+
 from ..client.runner import ActResult
-from ..cloud.logs import LogProof
+from ..cloud.logs import LogLine, LogProof
 
 # ── palette ───────────────────────────────────────────────────────────────────────────
 _INK = "#0f172a"
@@ -338,24 +340,54 @@ def render_results_table(result: ActResult) -> str:
     )
 
 
-def render_blast_summary(ok: int, total: int, instances: list[str]) -> str:
+def render_blast_summary(
+    ok: int, total: int, instances: list[str], counts: list[tuple[str, int]] | None = None
+) -> str:
     all_green = ok == total
     color = _OK if all_green else _ERR
-    chips = "".join(_chip(i, color=_INDIGO) + " " for i in instances) or "—"
+    counts = counts or [(i, 0) for i in instances]
+    maxc = max((c for _, c in counts), default=1) or 1
+    bars = "".join(
+        '<div style="display:flex;align-items:center;gap:10px;margin:4px 0">'
+        f'<span style="flex:0 0 96px;font:600 12px {_MONO};color:{_INDIGO}">{inst}</span>'
+        f'<div style="flex:1;background:{_WASH};border:1px solid {_LINE};border-radius:6px;'
+        'height:18px;overflow:hidden">'
+        f'<div style="width:{max(6, round(c / maxc * 100))}%;height:100%;background:{_INDIGO}">'
+        "</div></div>"
+        f'<span style="flex:0 0 60px;font:700 12px {_MONO};color:{_INK}">{c} req</span></div>'
+        for inst, c in counts
+    )
     return (
         f'<div style="{_CARD};border-color:{color}">'
         f'<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">'
         f'<div style="font:800 30px {_SANS};color:{color}">{ok}/{total}</div>'
         f'<div style="font:600 15px {_SANS};color:{_INK}">requests green</div>'
-        f'<div style="font:14px {_SANS};color:{_MUTED}">across '
+        f'<div style="font:14px {_SANS};color:{_MUTED}">fanned out across '
         f'<b style="color:{_INK}">{len(instances)}</b> autoscaled instances</div></div>'
-        f'<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">{chips}</div>'
-        f'<div style="margin-top:10px;color:{color};font:600 13px {_SANS}">'
+        f'<div style="margin-top:12px;font:600 12px {_SANS};color:{_MUTED};margin-bottom:4px">'
+        f"requests handled per instance</div>{bars}"
+        f'<div style="margin-top:12px;color:{color};font:600 13px {_SANS}">'
         "zero sticky · zero session store · any request on any instance</div></div>"
     )
 
 
 # ── real-log proof panel (terminal styled) ──────────────────────────────────────────────
+_STATUS_RE = re.compile(r'HTTP/1\.1"\s+(\d{3})')
+
+
+def _status_of(text: str) -> str:
+    m = _STATUS_RE.search(text)
+    return m.group(1) if m else ""
+
+
+def _status_color(code: str) -> str:
+    if code.startswith("2"):
+        return "#6ee7b7"  # green — served
+    if code.startswith(("4", "5")):
+        return "#f87171"  # red — session not found / error
+    return "#cbd5e1"
+
+
 def render_log_proof(proof: LogProof | None, *, headline: str, subtitle: str = "") -> str:
     term_bg = "#0b1020"
     if proof is None:
@@ -376,16 +408,43 @@ def render_log_proof(proof: LogProof | None, *, headline: str, subtitle: str = "
         )
         count_chip = ""
     else:
-        shown = proof.lines[:12]
-        line_html = "".join(
-            f'<div style="display:flex;gap:10px;padding:1px 0">'
-            f'<span style="color:#64748b;flex:0 0 62px">{ln.ts}</span>'
-            f'<span style="color:#93c5fd;flex:0 0 108px">{ln.instance or "—"}</span>'
-            f'<span style="color:#a7f3d0;white-space:nowrap;overflow:hidden;'
-            f'text-overflow:ellipsis">{ln.text}</span></div>'
-            for ln in shown
+        # status tally across ALL lines (green 200s, red 404s = "session not found")
+        tally: dict[str, int] = {}
+        for ln in proof.lines:
+            code = _status_of(ln.text)
+            if code:
+                tally[code] = tally.get(code, 0) + 1
+        summary = " · ".join(
+            f'<span style="color:{_status_color(c)};font-weight:700">{n}×{c}</span>'
+            for c, n in sorted(tally.items())
         )
-        body = f'<div style="font:12px/1.6 {_MONO}">{line_html}</div>'
+        summary_line = (
+            f'<div style="color:#64748b;border-bottom:1px solid #1e2740;padding-bottom:6px;'
+            f'margin-bottom:6px">{len(proof.lines)} requests · {summary}</div>'
+            if summary
+            else ""
+        )
+        shown = proof.lines[:12]
+
+        def _paint(m: re.Match[str]) -> str:
+            code = m.group(2)
+            return (
+                f'{m.group(1)} <span style="color:{_status_color(code)};font-weight:700">'
+                f"{code}{m.group(3)}</span>"
+            )
+
+        def _line(ln: LogLine) -> str:
+            text = re.sub(r'(HTTP/1\.1")\s+(\d{3})(.*)$', _paint, ln.text)
+            return (
+                '<div style="display:flex;gap:10px;padding:1px 0">'
+                f'<span style="color:#64748b;flex:0 0 62px">{ln.ts}</span>'
+                f'<span style="color:#93c5fd;flex:0 0 108px">{ln.instance or "—"}</span>'
+                '<span style="color:#a7f3d0;white-space:nowrap;overflow:hidden;'
+                f'text-overflow:ellipsis">{text}</span></div>'
+            )
+
+        line_html = "".join(_line(ln) for ln in shown)
+        body = f'<div style="font:12px/1.6 {_MONO}">{summary_line}{line_html}</div>'
         count_chip = (
             f'<span style="padding:3px 10px;border-radius:999px;background:{_OK}1f;color:{_OK};'
             f'font:700 13px {_SANS}">{proof.instance_count} distinct instances</span>'

@@ -9,13 +9,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from mcp import Client
 from pydantic import BaseModel
 
-DEFAULT_ITEMS: list[tuple[str, int]] = [("apple", 2), ("banana", 1)]
+# A small basket so every act sends a *different* order — the point is that each button
+# click is a fresh set of real MCP requests, not a canned replay of the same cart.
+_BASKET: list[str] = [
+    "apple", "banana", "cold brew", "oat milk", "sourdough", "avocado",
+    "orange", "greek yogurt", "granola", "kombucha", "dark chocolate", "eggs",
+]
+
+
+def _random_items() -> list[tuple[str, int]]:
+    names = random.sample(_BASKET, k=random.randint(2, 3))
+    return [(n, random.randint(1, 3)) for n in names]
 
 
 class RowResult(BaseModel):
@@ -79,7 +90,7 @@ class ActRunner:
         return row, payload
 
     async def run_act(self, mode: str, items: list[tuple[str, int]] | None = None) -> ActResult:
-        items = items if items is not None else DEFAULT_ITEMS
+        items = items if items is not None else _random_items()
         rows: list[RowResult] = []
         token = ""
         try:
@@ -117,19 +128,20 @@ class ActRunner:
         rows: list[RowResult] = []
         try:
             async with Client(self.proxy_url, mode="legacy") as client:
+                (n1, q1), (n2, q2) = _random_items()[:2]
                 r1, p1 = await self._call(client, 1, "create_cart", {})
                 rows.append(r1)
                 token = str(p1.get("cart_token", "")) if p1 else ""
                 pinned = r1.served_by
                 r2, _ = await self._call(
-                    client, 2, "add_item", {"cart_token": token, "name": "apple", "qty": 2}
+                    client, 2, "add_item", {"cart_token": token, "name": n1, "qty": q1}
                 )
                 rows.append(r2)
                 # recycle the pod this session is pinned to, then continue the SAME session
                 if pinned:
                     await on_pin(pinned)
                 r3, _ = await self._call(
-                    client, 3, "add_item", {"cart_token": token, "name": "banana", "qty": 1}
+                    client, 3, "add_item", {"cart_token": token, "name": n2, "qty": q2}
                 )
                 rows.append(r3)
                 r4, _ = await self._call(client, 4, "get_cart", {"cart_token": token})

@@ -7,8 +7,9 @@ from tests.integration.test_core_claim import cluster
 
 
 async def test_runner_stateless_all_green() -> None:
+    # Pass explicit items so the assertion is deterministic (the demo default is random).
     async with cluster(stateless=True) as (url, _state):
-        result = await ActRunner(url).run_act("auto")
+        result = await ActRunner(url).run_act("auto", items=[("apple", 2), ("banana", 1)])
     assert result.all_ok
     assert result.rows[-1].cart == [{"name": "apple", "qty": 2}, {"name": "banana", "qty": 1}]
 

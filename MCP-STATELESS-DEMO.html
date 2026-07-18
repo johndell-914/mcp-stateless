@@ -131,7 +131,7 @@ body{font-family:var(--sans);background:
 .step .st-desc{color:var(--muted);font-size:.94em;}
 .step .st-desc code{font:.9em var(--mono);background:var(--card2);color:var(--accent);padding:1px 6px;border-radius:5px;}
 .step .code{margin-top:12px;background:var(--code-bg);border:1px solid var(--border);border-radius:9px;
-  padding:12px 14px;font:.82em/1.7 var(--mono);overflow-x:auto;}
+  padding:12px 14px;font:.82em/1.7 var(--mono);overflow-x:auto;white-space:pre-wrap;}
 .code .del{color:#ff7b72;} .code .add{color:#7ee787;} .code .cmt{color:#8b949e;}
 .nav{display:flex;align-items:center;gap:14px;margin-top:16px;justify-content:center;}
 .nav button{background:var(--card);border:1px solid var(--border2);color:var(--text);
@@ -291,6 +291,8 @@ const N = {
   cloud:   {ic:'☁️', nm:'Cloud Run LB',   tech:'autoscales · concurrency=1', nt:'Google’s load balancer that adds servers on demand', tone:'ok'},
   db:      {ic:'🐘', nm:'Supabase',       tech:'managed Postgres · carts keyed by token', nt:'The real database — where the cart actually lives'},
   logs:    {ic:'📜', nm:'Cloud Run logs', tech:'N distinct instanceIds', nt:'The platform’s own receipts — proof it really happened', tone:'ok'},
+  proxy:   {ic:'⚖️', nm:'Proxy / LB',     tech:'reads mcp-session-id · forwards bytes', nt:'The load balancer — picks an instance'},
+  mcpsrv:  {ic:'🖥️', nm:'MCP server',     tech:'streamable-http · @server.tool()', nt:'One server instance handling the call', tone:'ok'},
   instA:   {ic:'🖥️', nm:'Instance A',     tech:'holds session A in memory', nt:'Server #1 · holds the session'},
   instB:   {ic:'🖥️', nm:'Instance B',     tech:'Server #2', nt:'Server #2', breakTag:'“Session not found”'},
   mA:      {ic:'🖥️', nm:'Instance A',     tech:'stateless', nt:'Server #1', tone:'ok'},
@@ -399,6 +401,42 @@ const TABS = {
        t:'Proven by the platform’s own logs',
        tech:'Cloud Run’s stdout shows <b>N distinct instanceIds</b> served the burst — evidence from Google, not from us. (Measured: 7 instances for a 60-request blast.)',
        nt:'And the proof isn’t our word for it — Google’s own logs show a whole set of different servers each did their share.'},
+    ]
+  },
+  request: {
+    label:'Request Flow', icon:'⚙️', tone:'accent',
+    stageTitle:'REQUEST FLOW — one tool call, end to end (for the engineers)',
+    stages:[['agent'],['proxy'],['mcpsrv'],['db']],
+    steps:[
+      {on:['agent','proxy'], lit:[0], k:'accent',
+       t:'1 · Agent calls a tool',
+       tech:'The MCP client serialises a JSON-RPC <code>tools/call</code> and POSTs it over streamable HTTP to the proxy’s <code>/mcp</code>. In stateless mode there is no <code>initialize</code> / session id.',
+       nt:'The assistant asks the server to do something — “create a cart” — as a single web request.',
+       code:'<span class="cmt"># client/runner.py</span>\nawait client.call_tool("create_cart", {})'},
+      {on:['proxy','mcpsrv'], lit:[1], k:'accent',
+       t:'2 · Proxy routes it',
+       tech:'The proxy reads one header (<code>mcp-session-id</code>), picks an instance (round-robin, or learned sticky), and forwards the raw bytes. It is MCP-agnostic.',
+       nt:'The load balancer picks one of the server machines and passes the request straight through.',
+       code:'<span class="cmt"># proxy/app.py</span>\nidx = state.pick(session_id)\nawait client.request(method, target + "/mcp", content=body)'},
+      {on:['mcpsrv','db'], lit:[2], k:'ok',
+       t:'3 · Server mints the cart + a signed token',
+       tech:'The tool inserts a row and returns an HMAC-signed <code>cart_token</code> — an opaque, tamper-proof handle to that row.',
+       nt:'The server creates the cart in the database and hands back a claim-ticket for it.',
+       code:'<span class="cmt"># server/tools.py + cart/store_postgres.py</span>\ncart_id = await store.create()          <span class="cmt"># insert into carts …</span>\nreturn {"cart_token": codec.encode(cart_id), "items": []}'},
+      {on:['agent','proxy','mcpsrv'], lit:[0,1], k:'accent',
+       t:'4 · Agent carries the token into the next call',
+       tech:'<code>add_item</code> takes the <code>cart_token</code> as a tool argument — the state rides in the request, not in server memory.',
+       nt:'To add an item, the assistant simply shows its claim-ticket. Nothing is “remembered” on any one machine.',
+       code:'<span class="cmt"># client/runner.py</span>\nawait client.call_tool("add_item",\n    {"cart_token": token, "name": "apple", "qty": 2})'},
+      {on:['mcpsrv','db'], lit:[2], k:'ok',
+       t:'5 · Server verifies the token + updates',
+       tech:'<code>codec.decode</code> re-signs the id and <code>compare_digest</code>s it (no forgery), then appends the item with a jsonb <code>||</code>.',
+       nt:'The server checks the ticket is genuine, then adds the item to that cart in the database.',
+       code:'<span class="cmt"># cart/token.py + cart/store_postgres.py</span>\ncart_id = codec.decode(cart_token)      <span class="cmt"># verify HMAC</span>\nupdate carts set items = items || $2::jsonb where id = $1'},
+      {on:['agent','proxy','mcpsrv','db'], lit:[0,1,2], k:'ok',
+       t:'6 · Any instance can serve any call',
+       tech:'Because the token + Postgres hold the state, no server-side session is needed. That is why a plain round-robin works — and why the migration is only two lines.',
+       nt:'Since the ticket and the database do all the work, it doesn’t matter which machine answers. That’s the whole point.'},
     ]
   },
 };

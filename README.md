@@ -113,6 +113,37 @@ directly with `asyncpg`.
 
 ---
 
+## Anatomy of a tool call
+
+Trace one request end-to-end and the codebase falls into place. Here's `add_item`:
+
+```mermaid
+sequenceDiagram
+    participant A as Agent · client/runner.py
+    participant P as Proxy · proxy/app.py
+    participant S as MCP server · server/tools.py
+    participant T as Token · cart/token.py
+    participant DB as Postgres · cart/store_postgres.py
+    A->>P: POST /mcp — tools/call add_item {cart_token, name, qty}
+    P->>S: forward (round-robin / sticky; reads mcp-session-id)
+    S->>T: codec.decode(cart_token) → verify HMAC → cart_id
+    S->>DB: update carts set items = items || $2 where id = cart_id
+    DB-->>S: updated items
+    S-->>A: {served_by, cart_token, items}
+```
+
+1. **Agent** — [`client/runner.py`](src/mcp_stateless_demo/client/runner.py) opens `Client(url, mode=…)` and calls `client.call_tool("add_item", {…})`; the MCP SDK serializes a JSON-RPC `tools/call` and POSTs it over streamable HTTP. In stateless mode there's no `initialize`/session-id handshake.
+2. **Proxy** — [`proxy/app.py`](src/mcp_stateless_demo/proxy/app.py) reads one header (`mcp-session-id`), `state.pick()`s an instance (round-robin or learned sticky), and forwards the raw bytes.
+3. **Server** — [`server/tools.py`](src/mcp_stateless_demo/server/tools.py) runs the `@server.tool()` function. With `stateless_http=False` the transport first checks the session belongs to *this* instance (a `404 "Session not found"` otherwise — that's the "before" break, before your tool even runs).
+4. **Token** — [`cart/token.py`](src/mcp_stateless_demo/cart/token.py) re-signs the id and `compare_digest`s it, then returns the `cart_id` (a client can't forge one it wasn't given).
+5. **Store** — [`cart/store_postgres.py`](src/mcp_stateless_demo/cart/store_postgres.py) appends the item with a jsonb `||` and returns the updated cart.
+
+`create_cart` is the same path minus the decode: it `insert`s a row (`store.create()`) and returns `codec.encode(cart_id)` — the signed handle the client carries into every later call.
+
+**Why this shape matters:** `add_item` needs *nothing* from server memory — the `cart_token` + Postgres hold all the state, so any instance can serve any call. That's the explicit-handle pattern, and it's why flipping `stateless_http` is a two-line change rather than a rewrite. (The interactive diagram's **Request Flow** tab walks this same sequence visually.)
+
+---
+
 ## Run it locally
 
 You need Docker and a Postgres database (Supabase's free tier works well).

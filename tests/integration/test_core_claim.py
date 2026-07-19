@@ -142,3 +142,21 @@ async def test_sticky_kill_loses_session() -> None:
             except Exception:
                 failed = True
     assert failed, "killing the session owner must lose the session"
+
+
+async def test_stateless_survives_recycle() -> None:
+    """The mirror of the sticky drop: recycle the instance that *created* the cart under the
+    stateless protocol, and a surviving instance still serves the SAME token. Same disruptive
+    action, opposite outcome — this is ``run_recycle_survive``'s claim, at the protocol level.
+    """
+    async with cluster(stateless=True, n=2) as (url, state):
+        async with Client(url, mode="auto") as client:
+            create = _payload(await client.call_tool("create_cart", {}))
+            token, creator = create["cart_token"], create["served_by"]
+            state.down.add(int(creator.split("-")[-1]))  # recycle the pod that created the cart
+            added = _payload(
+                await client.call_tool("add_item", {"cart_token": token, "name": "apple"})
+            )
+            cart = _payload(await client.call_tool("get_cart", {"cart_token": token}))
+    assert [i["name"] for i in cart["items"]] == ["apple"], "the cart survived the recycle"
+    assert added["served_by"] != creator, "a different, surviving instance served the follow-up"

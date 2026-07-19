@@ -141,6 +141,13 @@ _NARRATIVE: dict[str, tuple[str, str, str]] = {
         "Sticky is on, yet when the instance holding a live session is recycled, that "
         "conversation is gone — even though the load balancer is doing its job.",
     ),
+    "recycle_survive": (
+        _OK,
+        "Recycle a pod — the agent doesn't even notice.",
+        "Stateless, plain round-robin. Recycle the very instance that created the cart and the "
+        "next call just lands on another — the cart_token + Postgres carry the state. The same "
+        "recycle that dropped the sticky session is a non-event here.",
+    ),
     "stateless": (
         _OK,
         "Delete the gateway. Delete the store.",

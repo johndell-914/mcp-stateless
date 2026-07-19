@@ -158,6 +158,40 @@ class ActRunner:
                 )
         return ActResult(mode="legacy-recycle", rows=rows)
 
+    async def run_recycle_survive(self, on_kill: Callable[[str], Awaitable[None]]) -> ActResult:
+        """Stateless counterpart to ``run_recycle_drop``: recycle the instance that *created*
+        the cart, then keep going on the SAME cart_token. State rides in the token + Postgres,
+        so a surviving instance serves the rest — the recycle is a non-event. Same disruptive
+        action as the sticky drop, opposite outcome: the thesis, shown for real (not faked).
+        """
+        rows: list[RowResult] = []
+        try:
+            async with Client(self.proxy_url, mode="auto") as client:
+                (n1, q1), (n2, q2) = _random_items()[:2]
+                r1, p1 = await self._call(client, 1, "create_cart", {})
+                rows.append(r1)
+                token = str(p1.get("cart_token", "")) if p1 else ""
+                creator = r1.served_by
+                r2, _ = await self._call(
+                    client, 2, "add_item", {"cart_token": token, "name": n1, "qty": q1}
+                )
+                rows.append(r2)
+                # recycle the very instance that created the cart, then continue the SAME cart
+                if creator:
+                    await on_kill(creator)
+                r3, _ = await self._call(
+                    client, 3, "add_item", {"cart_token": token, "name": n2, "qty": q2}
+                )
+                rows.append(r3)
+                r4, _ = await self._call(client, 4, "get_cart", {"cart_token": token})
+                rows.append(r4)
+        except Exception as exc:  # noqa: BLE001 — a failure here is still an honest demo outcome
+            if not rows:
+                rows.append(
+                    RowResult(n=1, tool="connect", ok=False, error=f"{type(exc).__name__}: {exc}")
+                )
+        return ActResult(mode="stateless-recycle", rows=rows)
+
     async def run_blast(self, total: int = 50) -> BlastResult:
         async def one() -> tuple[bool, str | None]:
             try:

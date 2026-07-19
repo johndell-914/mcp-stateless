@@ -54,8 +54,20 @@ class Demo:
         for i in range(len(self.legacy)):
             await self._post("/revive", {"instance": i})
 
+    async def _proxy_upstreams(self) -> list[str]:
+        """The proxy's current target set — tells us which world the last beat left us in."""
+        async with httpx2.AsyncClient(timeout=20) as client:
+            resp = await client.get(self.s.proxy_base.rstrip("/") + "/log")
+        return list(resp.json().get("upstreams", []))
+
     def _legacy_index(self, name: str | None) -> int | None:
         for i, url in enumerate(self.legacy):
+            if name and name in url:
+                return i
+        return None
+
+    def _modern_index(self, name: str | None) -> int | None:
+        for i, url in enumerate(self.modern):
             if name and name in url:
                 return i
         return None
@@ -156,7 +168,18 @@ class Demo:
             ),
         )
 
-    async def beat2_recycle(self) -> tuple[str, str, str, str, str]:
+    async def recycle_pod(self) -> tuple[str, str, str, str, str]:
+        """Context-aware recycle: do the right thing for whichever world the last beat left the
+        proxy in. Sticky/legacy → the pinned session drops (fragile). Stateless/modern → the
+        agent survives (any instance serves any request). The result reads back which world you
+        were in — same disruptive action, the protocol decides the outcome.
+        """
+        upstreams = await self._proxy_upstreams()
+        if set(upstreams) == set(self.modern):
+            return await self._recycle_stateless()
+        return await self._recycle_sticky()
+
+    async def _recycle_sticky(self) -> tuple[str, str, str, str, str]:
         await self._post("/target", {"upstreams": self.legacy})
         await self._post("/config", {"sticky": True})
         await self._revive_all()
@@ -183,6 +206,37 @@ class Demo:
                 None,
                 headline="the pinned pod is gone",
                 subtitle="its live session went with it — the console shows the instance disappear",
+            ),
+        )
+
+    async def _recycle_stateless(self) -> tuple[str, str, str, str, str]:
+        await self._post("/target", {"upstreams": self.modern})
+        await self._post("/config", {"sticky": False})
+        await self._revive_all()
+        self._recycled = None
+
+        async def on_kill(name: str) -> None:
+            idx = self._modern_index(name)
+            if idx is not None:
+                await self._post("/kill", {"instance": idx})
+            self._recycled = name
+
+        result = await self.runner.run_recycle_survive(on_kill)
+        served = [r.served_by for r in result.rows if r.ok and r.served_by]
+        down = [self._recycled] if self._recycled else []
+        await self._revive_all()  # restore the proxy for a re-runnable demo
+        return (
+            panels.render_stepper(3),
+            panels.render_narrative("recycle_survive"),
+            panels.render_architecture(
+                "after", self.modern_names(), served=served, down=down
+            ),
+            panels.render_results_table(result),
+            panels.render_log_proof(
+                None,
+                headline="the pod is gone — the agent isn't",
+                subtitle="stateless: the cart rode in the token + Postgres, so a surviving "
+                "instance served the rest",
             ),
         )
 
@@ -260,9 +314,9 @@ def build_demo(settings: Settings | None = None) -> gr.Blocks:
                     gr.Markdown("### Run the demo")
                     b1 = gr.Button("① Scale it", variant="primary")
                     b2 = gr.Button("② Add the tax (sticky + store)")
-                    recycle = gr.Button("💥 Recycle a pod")
                     b3 = gr.Button("③ Go stateless", variant="primary")
                     b4 = gr.Button("④ Prove it at scale ⚡", variant="primary")
+                    recycle = gr.Button("💥 Recycle a pod")
                     refresh = gr.Button("↻ Refresh logs")
                     reset = gr.Button("↺ Reset")
                 narrative = gr.HTML(panels.render_narrative("intro"))  # what the current step does
@@ -280,7 +334,7 @@ def build_demo(settings: Settings | None = None) -> gr.Blocks:
         outs = [stepper, narrative, arch, table, logproof]
         b1.click(d.beat1_scale, outputs=outs)
         b2.click(d.beat2_sticky, outputs=outs)
-        recycle.click(d.beat2_recycle, outputs=outs)
+        recycle.click(d.recycle_pod, outputs=outs)
         b3.click(d.beat3_stateless, outputs=outs)
         b4.click(d.beat4_proof, outputs=outs)
         refresh.click(d.refresh_logs, outputs=[logproof])

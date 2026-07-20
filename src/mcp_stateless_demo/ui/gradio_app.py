@@ -48,6 +48,7 @@ class Demo:
         # The live agent session held across clicks (② / ③ start it, Recycle continues it).
         # Client-side plumbing that models "one agent, one session" — see runner.Conversation.
         self._conv: Conversation | None = None
+        self._conv_since: datetime | None = None  # when it started → scopes its log proof
 
     # ── proxy control ──────────────────────────────────────────────────────────────────
     async def _post(self, path: str, payload: dict[str, Any]) -> None:
@@ -67,6 +68,7 @@ class Demo:
     async def _start_conversation(self, mode: str) -> ActResult:
         """Close any prior session and start a fresh live one in ``mode``, running a full act."""
         await self._close_conversation()
+        self._conv_since = datetime.now(UTC)  # scope this session's log proof from here
         self._conv = self.runner.conversation(mode)
         return await self._conv.scripted_act()
 
@@ -184,14 +186,13 @@ class Demo:
         await self._post("/target", {"upstreams": self.legacy})
         await self._post("/config", {"sticky": True})
         await self._revive_all()
-        since = datetime.now(UTC)
         result = await self._start_conversation("legacy")  # a live session, pinned by sticky
         logs = await self._pull_logs(
             self.legacy_svc,
             headline="Cloud Run logs — sticky pins to one instance",
             subtitle="every call from this session lands on the same instance (one distinct id)",
             contains="POST /mcp",
-            since=since,
+            since=self._conv_since,
         )
         return (
             panels.render_stepper(2),
@@ -211,9 +212,9 @@ class Demo:
         one pod, so recycling that pod drops it; stateless bound it to no pod, so a surviving
         instance carries on. Same disruptive action, the protocol decides the outcome.
         """
-        self._log_ctx = None  # this step's proof is the table + strip, not Cloud Run logs
         conv = self._conv
         if conv is None or conv.pinned is None:
+            self._log_ctx = None
             return self._recycle_needs_session()
 
         pod = conv.pinned
@@ -230,6 +231,26 @@ class Demo:
                     r.error = f"session lost — pod {pod} was recycled"
         served = [r.served_by for r in result.rows if r.ok and r.served_by]
 
+        # The session's REAL Cloud Run logs, scoped to when it started (refreshable).
+        if legacy:
+            logs = await self._pull_logs(
+                self.legacy_svc,
+                headline=f"Cloud Run logs — this session lived on {pod}",
+                subtitle=f"real stdout: {pod} served every call — recycling it is what dropped the "
+                "session (the drop itself is a proxy 503, so it's in the FAIL rows above)",
+                contains="POST /mcp",
+                since=self._conv_since,
+            )
+        else:
+            logs = await self._pull_logs(
+                self.modern_svc,
+                headline="Cloud Run logs — the survivor carried on",
+                subtitle="real stdout: two instances served this session; the post-recycle turn "
+                "landed on the survivor",
+                contains="POST /mcp",
+                since=self._conv_since,
+            )
+
         await self._revive_all()  # restore the proxy for a re-runnable demo
         if legacy:
             await self._close_conversation()  # the dropped session is dead — ② restarts a fresh one
@@ -241,26 +262,14 @@ class Demo:
                     served=served, down=[pod],
                 ),
                 panels.render_results_table(result, recycled_after=before),
-                panels.render_log_proof(
-                    None,
-                    headline="the pinned pod is gone",
-                    subtitle="its live session went with it — the same conversation now fails",
-                    note="the drop is a proxy 503 (no instance log) — see the FAIL rows above",
-                ),
+                logs,
             )
         return (
             panels.render_stepper(3),
             panels.render_narrative("recycle_survive"),
             panels.render_architecture("after", self.modern_names(), served=served, down=[pod]),
             panels.render_results_table(result, recycled_after=before),
-            panels.render_log_proof(
-                None,
-                headline="the pod is gone — the agent isn't",
-                subtitle="stateless: the cart rode in the token + Postgres, so a surviving "
-                "instance served the rest",
-                note="the survivor's served_by is in the table above "
-                "(green rows below the divider)",
-            ),
+            logs,
         )
 
     def _recycle_needs_session(self) -> tuple[str, str, str, str, str]:
@@ -281,14 +290,13 @@ class Demo:
         await self._post("/target", {"upstreams": self.modern})
         await self._post("/config", {"sticky": False})
         await self._revive_all()
-        since = datetime.now(UTC)
         result = await self._start_conversation("auto")  # a live session, bound to no pod
         logs = await self._pull_logs(
             self.modern_svc,
             headline="Cloud Run logs — stateless spreads across instances",
             subtitle="plain round-robin, no sticky — the cart stays consistent anyway",
             contains="POST /mcp",
-            since=since,
+            since=self._conv_since,
         )
         return (
             panels.render_stepper(3),

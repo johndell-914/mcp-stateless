@@ -251,9 +251,11 @@ class Conversation:
 
     async def continue_act(self) -> ActResult:
         """One more add + get on the SAME session — used right after a recycle to show whether
-        the session drops (legacy) or carries on (stateless)."""
-        name, qty = _random_items()[0]
-        await self.add(name, qty)
+        the session drops (legacy) or carries on (stateless). Picks an item not already in the
+        cart so the post-recycle line reads distinctly (no confusing "avocado×3 … avocado×3")."""
+        in_cart = {i["name"] for r in self.rows if r.cart for i in r.cart}
+        pool = [n for n in _BASKET if n not in in_cart] or _BASKET
+        await self.add(random.choice(pool), random.randint(1, 3))
         await self.get()
         return self.result()
 

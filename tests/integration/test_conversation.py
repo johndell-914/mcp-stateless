@@ -53,3 +53,16 @@ async def test_conversation_close_is_idempotent() -> None:
         await conv.create()
         await conv.close()
         await conv.close()  # second close is a no-op, must not raise
+
+
+async def test_continue_act_adds_a_distinct_item() -> None:
+    # The post-recycle turn must not re-add an item already in the cart (no "avocado … avocado").
+    async with cluster(stateless=True, n=2) as (url, _state):
+        conv = Conversation(url, mode="auto")
+        try:
+            await conv.scripted_act()
+            snap = await conv.continue_act()
+        finally:
+            await conv.close()
+    final = [i["name"] for i in (snap.rows[-1].cart or [])]
+    assert len(final) == len(set(final)), f"duplicate line items in cart: {final}"

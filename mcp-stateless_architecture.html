@@ -245,7 +245,7 @@ body.nontechnical .step-right{background:var(--surface);}
           <div class="uf-ico">🖥️</div>
           <div class="uf-body">
             <div class="uf-name">Gradio UI</div>
-            <div class="uf-sub">ui/gradio_app.py · the live demo, driven in the browser</div>
+            <div class="uf-sub">ui/gradio_app.py + panels.py · the live demo, driven in the browser</div>
           </div>
         </div>
 
@@ -253,7 +253,7 @@ body.nontechnical .step-right{background:var(--surface);}
           <div class="uf-ico">⌨️</div>
           <div class="uf-body">
             <div class="uf-name">CLI runner</div>
-            <div class="uf-sub">client/__main__.py · python -m …client [legacy|auto]</div>
+            <div class="uf-sub">client/__main__.py · python -m …client [legacy|auto] [--blast N]</div>
           </div>
         </div>
 
@@ -298,7 +298,7 @@ body.nontechnical .step-right{background:var(--surface);}
           <div class="task-body">
             <div class="task-feature">LOAD BALANCER</div>
             <div class="task-name">proxy/app.py</div>
-            <div class="task-detail">round-robin · learned sticky · /kill /revive</div>
+            <div class="task-detail">round-robin · learned sticky · /config /target /kill /revive</div>
             <div class="task-nt nt-only">The traffic director. It sends each request to one of the servers, and can be told to knock a server offline to show what breaks.</div>
           </div>
           <span class="tbadge">LB</span>
@@ -309,8 +309,8 @@ body.nontechnical .step-right{background:var(--surface);}
           <div class="task-body">
             <div class="task-feature">MCP SERVER</div>
             <div class="task-name">server/app.py · tools.py</div>
-            <div class="task-detail">MCPServer · streamable-http · 3 @server.tool()</div>
-            <div class="task-nt nt-only">The actual server the assistant talks to. It offers three actions and runs them.</div>
+            <div class="task-detail">MCPServer · streamable-http · stateless_http flag · 3 @server.tool()</div>
+            <div class="task-nt nt-only">The actual server the assistant talks to. It offers three actions and runs them. One switch on it decides whether it must remember conversations or not.</div>
           </div>
           <span class="tbadge">3 tools</span>
         </div>
@@ -352,7 +352,7 @@ body.nontechnical .step-right{background:var(--surface);}
           <div class="task-body">
             <div class="task-feature">1 · CLIENT</div>
             <div class="task-name">client/runner.py</div>
-            <div class="task-detail">ActRunner · Client(url, mode) · call_tool(name, args)</div>
+            <div class="task-detail">ActRunner · Client(url, mode) · run_act / run_blast</div>
             <div class="task-nt nt-only">Sends the assistant's requests. It opens a connection and calls an action by name.</div>
           </div>
           <span class="tbadge">client</span>
@@ -417,7 +417,7 @@ body.nontechnical .step-right{background:var(--surface);}
           <div class="task-body">
             <div class="task-feature">1 · PULL</div>
             <div class="task-name">ui/gradio_app.py · _pull_logs()</div>
-            <div class="task-detail">retries past a few seconds of ingestion lag</div>
+            <div class="task-detail">retries past ingestion lag · ↻ Refresh re-pulls</div>
             <div class="task-nt nt-only">After a run, the demo asks for the platform's logs, retrying for a few seconds until they show up.</div>
           </div>
           <span class="tbadge">retry</span>
@@ -589,14 +589,17 @@ const FLOWS = {
       nodes:  ['n-surface-a', 'n-surface-b', 'n-proxy', 'n-server', 'n-cart', 'n-supabase'],
       arrows: ['sa-proxy', 'sb-proxy', 'proxy-server', 'server-cart', 'cart-db'],
       ttl:    'The request path',
-      desc:   'A tool call enters through the proxy, which picks one server instance — plain round-robin, or sticky when the "tax" is switched on — and forwards the raw bytes. The chosen server runs the tool, which calls the cart domain; the cart reads and writes Postgres. Nothing about the request is kept in server memory.',
-      tags:   ['pick()', 'forward()', '@server.tool()', 'asyncpg'],
+      desc:   'A tool call enters through the proxy, which picks one server instance — plain round-robin, or sticky when the "tax" is switched on — and forwards the raw bytes. The chosen server runs the tool, which calls the cart domain; the cart reads and writes Postgres. Nothing about the request is kept in server memory. Killing a pinned instance (/kill — the 💥 Recycle beat) makes pick() return None and the proxy answer 503: a sticky session dies with its pod; a stateless session has no pin to lose.',
+      tags:   ['pick()', 'forward()', '/kill → 503', '@server.tool()', 'asyncpg'],
       code:   `<span class="cm"># proxy/app.py · ProxyState.pick — one header decides the instance</span>
 <span class="kw">def</span> <span class="fn">pick</span>(self, session_id):
-    <span class="kw">if</span> self.sticky <span class="kw">and</span> session_id <span class="kw">in</span> self.affinity:
-        <span class="kw">return</span> self.affinity[session_id]      <span class="cm"># the "tax": pinned</span>
+    <span class="kw">if</span> self.sticky <span class="kw">and</span> session_id <span class="kw">and</span> session_id <span class="kw">in</span> self.affinity:
+        idx = self.affinity[session_id]              <span class="cm"># the "tax": pinned</span>
+        <span class="kw">return None if</span> idx <span class="kw">in</span> self.down <span class="kw">else</span> idx  <span class="cm"># owner killed → 503</span>
     up = self._up()
-    <span class="kw">return</span> up[<span class="fn">next</span>(self._counter) % <span class="fn">len</span>(up)]  <span class="cm"># plain round-robin</span>`,
+    <span class="kw">if not</span> up:
+        <span class="kw">return None</span>
+    <span class="kw">return</span> up[<span class="fn">next</span>(self._counter) % <span class="fn">len</span>(up)]     <span class="cm"># plain round-robin</span>`,
     },
     {
       nodes:  ['n-surface-a', 'n-surface-b', 'n-config', 'n-proxy', 'n-server',
@@ -604,7 +607,7 @@ const FLOWS = {
       arrows: ['sa-proxy', 'sb-proxy', 'proxy-server', 'server-cart', 'cart-db',
                'sa-cloud', 'cloud-log'],
       ttl:    'And a read-only proof path',
-      desc:   'Separately from the request path, cloud/logs.py reads Cloud Run\'s own stdout for a service and returns the distinct instanceIds it saw. The Gradio UI calls it after a run, so the demo proves autoscale with Google\'s logs — not our own claims. Full map: two surfaces → proxy → server → cart → Postgres, plus the log path.',
+      desc:   'Separately from the request path, cloud/logs.py reads Cloud Run\'s own stdout for a service and returns the distinct instanceIds it saw. The Gradio UI calls it after a run, so the demo proves autoscale with Google\'s logs — not our own claims. The ④ blast itself bypasses the proxy and hits the autoscaling Cloud Run service directly. Full map: two surfaces → proxy → server → cart → Postgres, plus the log path.',
       tags:   ['read_recent', 'LogProof', 'instanceId', 'to_thread'],
       code:   `<span class="cm"># cloud/logs.py — proof from the platform, not from us</span>
 <span class="kw">async def</span> <span class="fn">read_recent</span>(service, *, project=<span class="kw">None</span>,
@@ -651,14 +654,18 @@ const FLOWS = {
       tags:   ['decode', 'compare_digest', 'items || jsonb', 'any instance'],
       code:   `<span class="cm"># cart/token.py — verify the client-carried handle</span>
 <span class="kw">def</span> <span class="fn">decode</span>(self, token):
-    cart_id, signature = token.<span class="fn">rsplit</span>(<span class="str">"."</span>, 1)
+    <span class="kw">try</span>:
+        cart_id, signature = token.<span class="fn">rsplit</span>(<span class="str">"."</span>, 1)
+    <span class="kw">except</span> ValueError <span class="kw">as</span> exc:
+        <span class="kw">raise</span> InvalidToken(<span class="str">"malformed token"</span>) <span class="kw">from</span> exc
     <span class="kw">if not</span> hmac.<span class="fn">compare_digest</span>(signature, self.<span class="fn">_sign</span>(cart_id)):
         <span class="kw">raise</span> InvalidToken(<span class="str">"bad signature"</span>)
     <span class="kw">return</span> cart_id
 
 <span class="cm"># cart/store_postgres.py — append in Postgres</span>
-<span class="kw">await</span> pool.<span class="fn">fetchrow</span>(
-    <span class="str">"update carts set items = items || $2::jsonb ... where id = $1::uuid"</span>)`,
+<span class="kw">await</span> self._pool.<span class="fn">fetchrow</span>(
+    <span class="str">"update carts set items = items || $2::jsonb, updated_at = now() "</span>
+    <span class="str">"where id = $1::uuid returning id::text, items"</span>, cart_id, ...)`,
     },
   ],
 
@@ -676,6 +683,7 @@ const FLOWS = {
 logs = <span class="kw">await</span> self.<span class="fn">_pull_logs</span>(
     [self.scale_svc],
     headline=<span class="str">"Cloud Run logs — autoscaled service"</span>,
+    subtitle=<span class="str">"the platform's own instance ids — many, all serving, all green"</span>,
     contains=<span class="str">"POST /mcp"</span>,
 )`,
     },
@@ -683,16 +691,19 @@ logs = <span class="kw">await</span> self.<span class="fn">_pull_logs</span>(
       nodes:  ['n-surface-a', 'n-uilogs', 'n-readrecent'],
       arrows: ['sa-uilogs', 'ui-read'],
       ttl:    'Retry past the ingestion lag',
-      desc:   'Cloud Logging takes a few seconds to index new lines, so _pull_logs retries up to four times, three seconds apart, keeping the best result. Each attempt reads every requested service concurrently.',
-      tags:   ['retries=4', 'delay=3.0', 'asyncio.gather'],
+      desc:   'Cloud Logging takes a few seconds to index new lines, so _pull_logs retries up to four times, three seconds apart, stopping as soon as lines with instance ids arrive. Each attempt reads every requested service concurrently, and a ↻ Refresh logs button re-pulls the last context on demand if ingestion outlasts the retry window.',
+      tags:   ['retries=4', 'delay=3.0', 'asyncio.gather', 'refresh_logs'],
       code:   `<span class="cm"># ui/gradio_app.py._pull_logs — poll until the lines land</span>
-<span class="kw">for</span> attempt <span class="kw">in</span> <span class="fn">range</span>(retries):          <span class="cm"># retries=4</span>
+<span class="kw">for</span> attempt <span class="kw">in</span> <span class="fn">range</span>(retries):              <span class="cm"># retries=4</span>
     proofs = <span class="kw">await</span> asyncio.<span class="fn">gather</span>(
-        *[read_recent(s, project=self.project, contains=contains)
+        *[read_recent(s, project=self.project,
+                      minutes=6, limit=300, contains=contains)
           <span class="kw">for</span> s <span class="kw">in</span> services])
     best = <span class="fn">_merge</span>(proofs, services[0])
-    <span class="kw">if</span> best.ok <span class="kw">and</span> best.instances: <span class="kw">break</span>
-    <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(delay)         <span class="cm"># delay=3.0</span>`,
+    <span class="kw">if</span> best.ok <span class="kw">and</span> best.instances:
+        <span class="kw">break</span>
+    <span class="kw">if</span> attempt &lt; retries - 1:
+        <span class="kw">await</span> asyncio.<span class="fn">sleep</span>(delay)           <span class="cm"># delay=3.0</span>`,
     },
     {
       nodes:  ['n-surface-a', 'n-uilogs', 'n-readrecent', 'n-logging'],
@@ -703,6 +714,7 @@ logs = <span class="kw">await</span> self.<span class="fn">_pull_logs</span>(
       code:   `<span class="cm"># cloud/logs.py — the tail is the reliable per-instance key</span>
 full_iid = (entry.labels <span class="kw">or</span> {}).<span class="fn">get</span>(<span class="str">"instanceId"</span>, <span class="str">""</span>)
 iid = full_iid[-12:] <span class="kw">if</span> full_iid <span class="kw">else</span> <span class="str">""</span>
+ts = entry.timestamp.<span class="fn">strftime</span>(<span class="str">"%H:%M:%S"</span>) <span class="kw">if</span> entry.timestamp <span class="kw">else</span> <span class="str">""</span>
 lines.<span class="fn">append</span>(LogLine(ts=ts, instance=iid, text=text))
 <span class="kw">if</span> iid:
     instances.<span class="fn">add</span>(iid)`,
@@ -721,7 +733,7 @@ lines.<span class="fn">append</span>(LogLine(ts=ts, instance=iid, text=text))
 const NT_DESCS = {
   t1: [
     'The demo is built from a handful of small parts, each with one job. Two front doors — a dashboard and a command-line tool — drive everything behind them.',
-    'A request goes to a traffic director, which hands it to one of several identical servers, and the server saves the cart in a database. Nothing about the request is kept in a server\'s memory, so any server can handle any request.',
+    'A request goes to a traffic director, which hands it to one of several identical servers, and the server saves the cart in a database. Nothing about the request is kept in a server\'s memory, so any server can handle any request. If a machine a conversation was pinned to is taken away, that conversation is lost — a machine nothing is pinned to can be taken away freely.',
     'Separately, one part reads the cloud platform\'s own activity records to prove what really happened. That way the demo\'s claims are backed by the platform, not just by us.',
   ],
   t2: [
@@ -731,7 +743,7 @@ const NT_DESCS = {
   ],
   t3: [
     'After a run, the dashboard goes and fetches the cloud platform\'s own records to back up what it just showed. It doesn\'t rely only on names the servers reported.',
-    'Fresh records take a few seconds to appear, so it politely asks again a few times until they show up. It checks every service at once.',
+    'Fresh records take a few seconds to appear, so it politely asks again a few times until they show up. It checks every service at once, and a refresh button lets you pull them again later if they were slow to arrive.',
     'It then counts how many different machines appear in the records. A high count, all successful, is hard proof that the work really spread across many machines.',
   ],
 };

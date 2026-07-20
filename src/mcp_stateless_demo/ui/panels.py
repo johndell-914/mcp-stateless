@@ -313,9 +313,21 @@ def render_architecture(
 
 
 # ── request results table ───────────────────────────────────────────────────────────────
-def render_results_table(result: ActResult) -> str:
+def _recycle_divider() -> str:
+    """A boundary row marking where 💥 Recycle happened — rows below are the SAME session
+    continuing (green = survived on another instance, red = dropped)."""
+    return (
+        '<tr><td colspan="5" style="padding:7px 10px;text-align:center;'
+        f"color:{_AMBER};font:700 12px {_SANS};letter-spacing:.03em;"
+        f"background:{_AMBER}14;border-top:1px dashed {_AMBER}66;"
+        f'border-bottom:1px dashed {_AMBER}66">'
+        "💥 pod recycled — the same session continues below</td></tr>"
+    )
+
+
+def render_results_table(result: ActResult, recycled_after: int | None = None) -> str:
     rows = []
-    for r in result.rows:
+    for idx, r in enumerate(result.rows):
         ok = r.ok
         bg = f"{_OK}0d" if ok else f"{_ERR}0d"
         mark = (
@@ -339,6 +351,8 @@ def render_results_table(result: ActResult) -> str:
             f'<td style="padding:7px 10px;font:13px {_SANS}">{detail}</td>'
             f'<td style="padding:7px 10px">{mark}</td></tr>'
         )
+        if recycled_after is not None and idx + 1 == recycled_after:
+            rows.append(_recycle_divider())
     head = (
         f'<tr style="text-align:left;color:{_MUTED};font:12px {_SANS}">'
         '<th style="padding:6px 10px">#</th><th style="padding:6px 10px">tool</th>'

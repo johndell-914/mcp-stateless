@@ -25,6 +25,20 @@ def test_results_table_error() -> None:
     assert "FAIL" in html and "Session not found" in html
 
 
+def test_results_table_recycle_divider_marks_the_boundary() -> None:
+    rows = [
+        RowResult(n=1, tool="create_cart", ok=True, served_by="modern-b", cart=[]),
+        RowResult(n=2, tool="add_item", ok=True, served_by="modern-b",
+                  cart=[{"name": "apple", "qty": 3}]),
+        RowResult(n=3, tool="add_item", ok=True, served_by="modern-a",
+                  cart=[{"name": "banana", "qty": 1}]),
+    ]
+    result = ActResult(mode="auto", rows=rows)
+    assert "pod recycled" not in panels.render_results_table(result)  # off by default
+    html = panels.render_results_table(result, recycled_after=2)  # divider after rows 1-2
+    assert html.index("apple") < html.index("pod recycled") < html.index("banana")
+
+
 def test_scenario_has_key_phrase_and_agent_framing() -> None:
     html = panels.render_scenario()
     assert "50,000 users" in html and "create_cart()" in html

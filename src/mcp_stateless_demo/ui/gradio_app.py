@@ -196,6 +196,7 @@ class Demo:
         if idx is not None:
             await self._post("/kill", {"instance": idx})  # recycle the pod the session lives on
 
+        before = len(conv.rows)  # rows so far = the pre-recycle act; the divider goes here
         result = await conv.continue_act()  # one more turn on the SAME held session
         if legacy:
             for r in result.rows:  # restate the generic client error as the true, known cause
@@ -213,7 +214,7 @@ class Demo:
                     "before", self.legacy_names(), sticky=True, store=True,
                     served=served, down=[pod],
                 ),
-                panels.render_results_table(result),
+                panels.render_results_table(result, recycled_after=before),
                 panels.render_log_proof(
                     None,
                     headline="the pinned pod is gone",
@@ -224,7 +225,7 @@ class Demo:
             panels.render_stepper(3),
             panels.render_narrative("recycle_survive"),
             panels.render_architecture("after", self.modern_names(), served=served, down=[pod]),
-            panels.render_results_table(result),
+            panels.render_results_table(result, recycled_after=before),
             panels.render_log_proof(
                 None,
                 headline="the pod is gone — the agent isn't",

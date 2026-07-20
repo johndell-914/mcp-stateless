@@ -41,8 +41,23 @@ class LogProof(BaseModel):
         return len(self.instances)
 
 
+def _cutoff_iso(since: datetime | None, minutes: int) -> str:
+    """RFC3339 lower bound for the log query — the beat's start (``since``, with microsecond
+    precision so a query can't pick up the *previous* step's tail), else a rolling ``minutes``
+    window. Scoping each panel to ``since`` is what makes the per-beat instance counts truthful
+    (sticky = 1 instance, stateless = 2) instead of contaminated by earlier steps.
+    """
+    dt = since if since is not None else (datetime.now(UTC) - timedelta(minutes=minutes))
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ" if since is not None else "%Y-%m-%dT%H:%M:%SZ")
+
+
 def _read_sync(
-    service: str, project: str | None, minutes: int, limit: int, contains: str | None
+    service: str,
+    project: str | None,
+    minutes: int,
+    limit: int,
+    contains: str | None,
+    since: datetime | None,
 ) -> LogProof:
     try:
         from google.cloud import logging as gcloud_logging
@@ -52,7 +67,7 @@ def _read_sync(
         )
     try:
         client = gcloud_logging.Client(project=project) if project else gcloud_logging.Client()
-        cutoff = (datetime.now(UTC) - timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = _cutoff_iso(since, minutes)
         filter_ = (
             'resource.type="cloud_run_revision" '
             f'AND resource.labels.service_name="{service}" '
@@ -95,10 +110,12 @@ async def read_recent(
     minutes: int = 5,
     limit: int = 120,
     contains: str | None = None,
+    since: datetime | None = None,
 ) -> LogProof:
     """Recent Cloud Run stdout lines for ``service``, newest first.
 
-    ``contains`` filters to lines with that substring (e.g. ``"POST /mcp"``).
+    ``contains`` filters to lines with that substring (e.g. ``"POST /mcp"``). ``since`` scopes
+    the query to a start time (a beat's start) so the panel shows only that beat's requests.
     Returns ``ok=False`` (never raises) if credentials or the API are unavailable.
     """
-    return await asyncio.to_thread(_read_sync, service, project, minutes, limit, contains)
+    return await asyncio.to_thread(_read_sync, service, project, minutes, limit, contains, since)

@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # Cloud Run service names for the live log-proof panel; gcp_project "" = auto-detect via ADC
     scale_service: str = "mcp-stateless-scale"
     legacy_services: str = ""
+    modern_services: str = ""
     gcp_project: str = ""
 
     @staticmethod
@@ -55,6 +56,9 @@ class Settings(BaseSettings):
 
     def legacy_service_list(self) -> list[str]:
         return self._split(self.legacy_services)
+
+    def modern_service_list(self) -> list[str]:
+        return self._split(self.modern_services)
 
     @property
     def mcp_url(self) -> str:

@@ -21,6 +21,7 @@ import os
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")  # NDA: no phone-home
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
+from datetime import UTC, datetime
 from typing import Any
 
 import gradio as gr
@@ -40,9 +41,10 @@ class Demo:
         self.runner = ActRunner(settings.mcp_url)
         self.scale_runner = ActRunner(settings.scale_mcp_url)
         self.legacy_svc = settings.legacy_service_list()
+        self.modern_svc = settings.modern_service_list()
         self.scale_svc = settings.scale_service
         self.project = settings.gcp_project_or_none
-        self._log_ctx: tuple[list[str], str, str, str | None] | None = None
+        self._log_ctx: tuple[list[str], str, str, str | None, datetime | None] | None = None
         # The live agent session held across clicks (② / ③ start it, Recycle continues it).
         # Client-side plumbing that models "one agent, one session" — see runner.Conversation.
         self._conv: Conversation | None = None
@@ -88,19 +90,27 @@ class Demo:
         headline: str,
         subtitle: str,
         contains: str | None,
+        since: datetime | None = None,
         retries: int = 4,
         delay: float = 3.0,
     ) -> str:
-        # Remember the last real-log context so the "Refresh logs" button can re-pull it
-        # (Cloud Logging ingestion can lag past the initial retry window).
-        self._log_ctx = (services, headline, subtitle, contains)
+        # Remember the real-log context (incl. the beat's start) so "↻ Refresh logs" re-pulls
+        # the SAME scoped window (Cloud Logging ingestion can lag the first attempts).
+        self._log_ctx = (services, headline, subtitle, contains, since)
         if not services:
             return panels.render_log_proof(None, headline=headline, subtitle=subtitle)
         best: LogProof | None = None
         for attempt in range(retries):
             proofs = await asyncio.gather(
                 *[
-                    read_recent(s, project=self.project, minutes=6, limit=300, contains=contains)
+                    read_recent(
+                        s,
+                        project=self.project,
+                        minutes=6,
+                        limit=300,
+                        contains=contains,
+                        since=since,
+                    )
                     for s in services
                 ]
             )
@@ -118,12 +128,17 @@ class Demo:
             return panels.render_log_proof(
                 None,
                 headline="Cloud Run logs",
-                subtitle="live logs run on ① Scale it and ④ Prove it at scale — "
-                "this step's proof is the requests table above",
+                subtitle="this step's proof is the requests table above",
+                note="live Cloud Run logs run on ① ② ③ and ④ — nothing to refresh on this step",
             )
-        services, headline, subtitle, contains = ctx
+        services, headline, subtitle, contains, since = ctx
         return await self._pull_logs(
-            services, headline=headline, subtitle=subtitle, contains=contains, retries=1
+            services,
+            headline=headline,
+            subtitle=subtitle,
+            contains=contains,
+            since=since,
+            retries=1,
         )
 
     # ── beats ──────────────────────────────────────────────────────────────────────────
@@ -147,12 +162,15 @@ class Demo:
         await self._post("/target", {"upstreams": self.legacy})
         await self._post("/config", {"sticky": False})
         await self._revive_all()
+        since = datetime.now(UTC)
         result = await self.runner.run_act("legacy")
         logs = await self._pull_logs(
             self.legacy_svc,
-            headline="Cloud Run logs — legacy instances",
-            subtitle="the misrouted calls hit an instance that never saw the session",
+            headline="Cloud Run logs — the scale break (legacy)",
+            subtitle="round-robin sends the follow-up to an instance that never saw "
+            "the session → 404",
             contains="POST /mcp",
+            since=since,
         )
         return (
             panels.render_stepper(1),
@@ -163,11 +181,18 @@ class Demo:
         )
 
     async def beat2_sticky(self) -> tuple[str, str, str, str, str]:
-        self._log_ctx = None  # this step's proof is the table, not Cloud Run logs
         await self._post("/target", {"upstreams": self.legacy})
         await self._post("/config", {"sticky": True})
         await self._revive_all()
+        since = datetime.now(UTC)
         result = await self._start_conversation("legacy")  # a live session, pinned by sticky
+        logs = await self._pull_logs(
+            self.legacy_svc,
+            headline="Cloud Run logs — sticky pins to one instance",
+            subtitle="every call from this session lands on the same instance (one distinct id)",
+            contains="POST /mcp",
+            since=since,
+        )
         return (
             panels.render_stepper(2),
             panels.render_narrative("sticky"),
@@ -175,12 +200,7 @@ class Demo:
                 "before", self.legacy_names(), sticky=True, store=True, served=result.instances
             ),
             panels.render_results_table(result),
-            panels.render_log_proof(
-                None,
-                headline="sticky pins the session",
-                subtitle="every call from this session lands on the same instance — "
-                "see “served by” above. The cost is the gateway + store you now run.",
-            ),
+            logs,
         )
 
     async def recycle_pod(self) -> tuple[str, str, str, str, str]:
@@ -225,6 +245,7 @@ class Demo:
                     None,
                     headline="the pinned pod is gone",
                     subtitle="its live session went with it — the same conversation now fails",
+                    note="the drop is a proxy 503 (no instance log) — see the FAIL rows above",
                 ),
             )
         return (
@@ -237,6 +258,8 @@ class Demo:
                 headline="the pod is gone — the agent isn't",
                 subtitle="stateless: the cart rode in the token + Postgres, so a surviving "
                 "instance served the rest",
+                note="the survivor's served_by is in the table above "
+                "(green rows below the divider)",
             ),
         )
 
@@ -250,25 +273,29 @@ class Demo:
                 None,
                 headline="no live session yet",
                 subtitle="run ② Add the tax or ③ Go stateless first, then recycle its pod",
+                note="—",
             ),
         )
 
     async def beat3_stateless(self) -> tuple[str, str, str, str, str]:
-        self._log_ctx = None  # this step's proof is the table, not Cloud Run logs
         await self._post("/target", {"upstreams": self.modern})
         await self._post("/config", {"sticky": False})
         await self._revive_all()
+        since = datetime.now(UTC)
         result = await self._start_conversation("auto")  # a live session, bound to no pod
+        logs = await self._pull_logs(
+            self.modern_svc,
+            headline="Cloud Run logs — stateless spreads across instances",
+            subtitle="plain round-robin, no sticky — the cart stays consistent anyway",
+            contains="POST /mcp",
+            since=since,
+        )
         return (
             panels.render_stepper(3),
             panels.render_narrative("stateless"),
             panels.render_architecture("after", self.modern_names(), served=result.instances),
             panels.render_results_table(result),
-            panels.render_log_proof(
-                None,
-                headline="no gateway, no store",
-                subtitle="the same cart is consistent across instances — state rides in the token",
-            ),
+            logs,
         )
 
     def modern_names(self) -> list[str]:
@@ -276,6 +303,7 @@ class Demo:
 
     async def beat4_proof(self) -> tuple[str, str, str, str, str]:
         await self._close_conversation()
+        since = datetime.now(UTC)
         result = await self.scale_runner.run_blast(60)
         served = result.instances
         logs = await self._pull_logs(
@@ -283,6 +311,7 @@ class Demo:
             headline="Cloud Run logs — autoscaled service",
             subtitle="the platform's own instance ids — many, all serving, all green",
             contains="POST /mcp",
+            since=since,
         )
         return (
             panels.render_stepper(4),

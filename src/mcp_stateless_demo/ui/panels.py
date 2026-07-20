@@ -415,12 +415,16 @@ def _status_color(code: str) -> str:
     return "#cbd5e1"
 
 
-def render_log_proof(proof: LogProof | None, *, headline: str, subtitle: str = "") -> str:
+def render_log_proof(
+    proof: LogProof | None,
+    *,
+    headline: str,
+    subtitle: str = "",
+    note: str = "run a step to pull live logs…",
+) -> str:
     term_bg = "#0b1020"
     if proof is None:
-        body = (
-            f'<div style="color:{_FAINT};font:13px {_MONO}">run a step to pull live logs…</div>'
-        )
+        body = f'<div style="color:{_FAINT};font:13px {_MONO}">{note}</div>'
         count_chip = ""
     elif not proof.ok:
         body = (

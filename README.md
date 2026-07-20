@@ -272,7 +272,7 @@ export IMAGE=$REGION-docker.pkg.dev/$PROJECT/mcp-stateless/app:latest
 
    gcloud run deploy mcp-stateless-ui --image $IMAGE --region $REGION --memory=1Gi \
      --command=python --args=-m,mcp_stateless_demo.ui \
-     --set-env-vars="^@^PROXY_BASE=<proxy-url>@LEGACY_UPSTREAMS=<a>,<b>@MODERN_UPSTREAMS=<a>,<b>@SCALE_UPSTREAM=<scale-url>@LEGACY_SERVICES=mcp-stateless-legacy-a,mcp-stateless-legacy-b@GCP_PROJECT=$PROJECT" \
+     --set-env-vars="^@^PROXY_BASE=<proxy-url>@LEGACY_UPSTREAMS=<a>,<b>@MODERN_UPSTREAMS=<a>,<b>@SCALE_UPSTREAM=<scale-url>@LEGACY_SERVICES=mcp-stateless-legacy-a,mcp-stateless-legacy-b@MODERN_SERVICES=mcp-stateless-modern-a,mcp-stateless-modern-b@GCP_PROJECT=$PROJECT" \
      --allow-unauthenticated
    ```
 7. **Grant the UI's runtime service account `roles/logging.viewer`** so the live-log

@@ -116,7 +116,10 @@ class Demo:
         ctx = getattr(self, "_log_ctx", None)
         if not ctx:
             return panels.render_log_proof(
-                None, headline="Cloud Run logs", subtitle="run a step first, then refresh"
+                None,
+                headline="Cloud Run logs",
+                subtitle="live logs run on ① Scale it and ④ Prove it at scale — "
+                "this step's proof is the requests table above",
             )
         services, headline, subtitle, contains = ctx
         return await self._pull_logs(
@@ -126,6 +129,7 @@ class Demo:
     # ── beats ──────────────────────────────────────────────────────────────────────────
     async def intro(self) -> tuple[str, str, str, str, str]:
         await self._close_conversation()
+        self._log_ctx = None  # no live-log step active → "↻ Refresh logs" won't re-pull stale logs
         return (
             panels.render_stepper(0),
             panels.render_narrative("intro"),
@@ -159,6 +163,7 @@ class Demo:
         )
 
     async def beat2_sticky(self) -> tuple[str, str, str, str, str]:
+        self._log_ctx = None  # this step's proof is the table, not Cloud Run logs
         await self._post("/target", {"upstreams": self.legacy})
         await self._post("/config", {"sticky": True})
         await self._revive_all()
@@ -186,6 +191,7 @@ class Demo:
         one pod, so recycling that pod drops it; stateless bound it to no pod, so a surviving
         instance carries on. Same disruptive action, the protocol decides the outcome.
         """
+        self._log_ctx = None  # this step's proof is the table + strip, not Cloud Run logs
         conv = self._conv
         if conv is None or conv.pinned is None:
             return self._recycle_needs_session()
@@ -248,6 +254,7 @@ class Demo:
         )
 
     async def beat3_stateless(self) -> tuple[str, str, str, str, str]:
+        self._log_ctx = None  # this step's proof is the table, not Cloud Run logs
         await self._post("/target", {"upstreams": self.modern})
         await self._post("/config", {"sticky": False})
         await self._revive_all()

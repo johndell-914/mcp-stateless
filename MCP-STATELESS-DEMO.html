@@ -430,7 +430,7 @@ const TABS = {
        code:'<span class="cmt"># server/tools.py + cart/store_postgres.py</span>\ncart_id = await store.create()          <span class="cmt"># insert into carts …</span>\nreturn {"cart_token": codec.encode(cart_id), "items": []}'},
       {on:['agent','proxy','mcpsrv'], lit:[0,1], k:'accent',
        t:'5 · Agent carries the token into the next call',
-       tech:'<code>add_item</code> takes the <code>cart_token</code> as a tool argument — the state rides in the request, not in server memory.',
+       tech:'<code>add_item</code> takes the <code>cart_token</code> as a tool argument — the state rides in the request, not in server memory. The client holds <b>no server-side session</b> — only this token — so the same agent code runs in “before” and “after,” and a pod recycle can’t strand it.',
        nt:'To add an item, the assistant simply shows its claim-ticket. Nothing is “remembered” on any one machine.',
        code:'<span class="cmt"># client/runner.py</span>\nawait client.call_tool("add_item",\n    {"cart_token": token, "name": "apple", "qty": 2})'},
       {on:['mcpsrv','db'], lit:[2], k:'ok',

@@ -148,6 +148,12 @@ _NARRATIVE: dict[str, tuple[str, str, str]] = {
         "next call just lands on another — the cart_token + Postgres carry the state. The same "
         "recycle that dropped the sticky session is a non-event here.",
     ),
+    "recycle_none": (
+        _MUTED,
+        "No live session to recycle yet.",
+        "Run ② Add the tax or ③ Go stateless first — that starts a live agent session on a "
+        "real pod. Then recycle that pod and watch what the protocol does.",
+    ),
     "stateless": (
         _OK,
         "Delete the gateway. Delete the store.",

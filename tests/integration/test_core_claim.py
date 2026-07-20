@@ -147,7 +147,8 @@ async def test_sticky_kill_loses_session() -> None:
 async def test_stateless_survives_recycle() -> None:
     """The mirror of the sticky drop: recycle the instance that *created* the cart under the
     stateless protocol, and a surviving instance still serves the SAME token. Same disruptive
-    action, opposite outcome — this is ``run_recycle_survive``'s claim, at the protocol level.
+    action, opposite outcome — the recycle beat's claim, at the protocol level (the held-session
+    version lives in test_conversation.py).
     """
     async with cluster(stateless=True, n=2) as (url, state):
         async with Client(url, mode="auto") as client:

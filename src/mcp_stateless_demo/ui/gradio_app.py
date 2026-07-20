@@ -26,7 +26,7 @@ from typing import Any
 import gradio as gr
 import httpx2
 
-from ..client.runner import ActRunner
+from ..client.runner import ActResult, ActRunner, Conversation
 from ..cloud.logs import LogProof, read_recent
 from ..config import Settings, get_settings
 from . import panels
@@ -42,8 +42,10 @@ class Demo:
         self.legacy_svc = settings.legacy_service_list()
         self.scale_svc = settings.scale_service
         self.project = settings.gcp_project_or_none
-        self._recycled: str | None = None
         self._log_ctx: tuple[list[str], str, str, str | None] | None = None
+        # The live agent session held across clicks (② / ③ start it, Recycle continues it).
+        # Client-side plumbing that models "one agent, one session" — see runner.Conversation.
+        self._conv: Conversation | None = None
 
     # ── proxy control ──────────────────────────────────────────────────────────────────
     async def _post(self, path: str, payload: dict[str, Any]) -> None:
@@ -54,11 +56,17 @@ class Demo:
         for i in range(len(self.legacy)):
             await self._post("/revive", {"instance": i})
 
-    async def _proxy_upstreams(self) -> list[str]:
-        """The proxy's current target set — tells us which world the last beat left us in."""
-        async with httpx2.AsyncClient(timeout=20) as client:
-            resp = await client.get(self.s.proxy_base.rstrip("/") + "/log")
-        return list(resp.json().get("upstreams", []))
+    # ── the live agent session (held across clicks) ─────────────────────────────────────
+    async def _close_conversation(self) -> None:
+        if self._conv is not None:
+            await self._conv.close()
+            self._conv = None
+
+    async def _start_conversation(self, mode: str) -> ActResult:
+        """Close any prior session and start a fresh live one in ``mode``, running a full act."""
+        await self._close_conversation()
+        self._conv = self.runner.conversation(mode)
+        return await self._conv.scripted_act()
 
     def _legacy_index(self, name: str | None) -> int | None:
         for i, url in enumerate(self.legacy):
@@ -117,6 +125,7 @@ class Demo:
 
     # ── beats ──────────────────────────────────────────────────────────────────────────
     async def intro(self) -> tuple[str, str, str, str, str]:
+        await self._close_conversation()
         return (
             panels.render_stepper(0),
             panels.render_narrative("intro"),
@@ -130,6 +139,7 @@ class Demo:
         return [_svc_short(u) for u in self.legacy]
 
     async def beat1_scale(self) -> tuple[str, str, str, str, str]:
+        await self._close_conversation()  # the naive break is a one-shot; no live session to hold
         await self._post("/target", {"upstreams": self.legacy})
         await self._post("/config", {"sticky": False})
         await self._revive_all()
@@ -152,7 +162,7 @@ class Demo:
         await self._post("/target", {"upstreams": self.legacy})
         await self._post("/config", {"sticky": True})
         await self._revive_all()
-        result = await self.runner.run_act("legacy")
+        result = await self._start_conversation("legacy")  # a live session, pinned by sticky
         return (
             panels.render_stepper(2),
             panels.render_narrative("sticky"),
@@ -169,68 +179,51 @@ class Demo:
         )
 
     async def recycle_pod(self) -> tuple[str, str, str, str, str]:
-        """Context-aware recycle: do the right thing for whichever world the last beat left the
-        proxy in. Sticky/legacy → the pinned session drops (fragile). Stateless/modern → the
-        agent survives (any instance serves any request). The result reads back which world you
-        were in — same disruptive action, the protocol decides the outcome.
+        """Recycle the pod holding the live agent session, then continue on the SAME session.
+
+        The outcome is whatever the architecture actually does — no fabricated session, no
+        world-guessing. We act on the real conversation ② or ③ established: legacy pinned it to
+        one pod, so recycling that pod drops it; stateless bound it to no pod, so a surviving
+        instance carries on. Same disruptive action, the protocol decides the outcome.
         """
-        upstreams = await self._proxy_upstreams()
-        if set(upstreams) == set(self.modern):
-            return await self._recycle_stateless()
-        return await self._recycle_sticky()
+        conv = self._conv
+        if conv is None or conv.pinned is None:
+            return self._recycle_needs_session()
 
-    async def _recycle_sticky(self) -> tuple[str, str, str, str, str]:
-        await self._post("/target", {"upstreams": self.legacy})
-        await self._post("/config", {"sticky": True})
-        await self._revive_all()
-        self._recycled = None
+        pod = conv.pinned
+        legacy = conv.mode == "legacy"
+        idx = self._legacy_index(pod) if legacy else self._modern_index(pod)
+        if idx is not None:
+            await self._post("/kill", {"instance": idx})  # recycle the pod the session lives on
 
-        async def on_pin(name: str) -> None:
-            idx = self._legacy_index(name)
-            if idx is not None:
-                await self._post("/kill", {"instance": idx})
-            self._recycled = name
-
-        result = await self.runner.run_recycle_drop(on_pin)
+        result = await conv.continue_act()  # one more turn on the SAME held session
+        if legacy:
+            for r in result.rows:  # restate the generic client error as the true, known cause
+                if not r.ok:
+                    r.error = f"session lost — pod {pod} was recycled"
         served = [r.served_by for r in result.rows if r.ok and r.served_by]
-        down = [self._recycled] if self._recycled else []
+
         await self._revive_all()  # restore the proxy for a re-runnable demo
-        return (
-            panels.render_stepper(2),
-            panels.render_narrative("recycle"),
-            panels.render_architecture(
-                "before", self.legacy_names(), sticky=True, store=True, served=served, down=down
-            ),
-            panels.render_results_table(result),
-            panels.render_log_proof(
-                None,
-                headline="the pinned pod is gone",
-                subtitle="its live session went with it — the console shows the instance disappear",
-            ),
-        )
-
-    async def _recycle_stateless(self) -> tuple[str, str, str, str, str]:
-        await self._post("/target", {"upstreams": self.modern})
-        await self._post("/config", {"sticky": False})
-        await self._revive_all()
-        self._recycled = None
-
-        async def on_kill(name: str) -> None:
-            idx = self._modern_index(name)
-            if idx is not None:
-                await self._post("/kill", {"instance": idx})
-            self._recycled = name
-
-        result = await self.runner.run_recycle_survive(on_kill)
-        served = [r.served_by for r in result.rows if r.ok and r.served_by]
-        down = [self._recycled] if self._recycled else []
-        await self._revive_all()  # restore the proxy for a re-runnable demo
+        if legacy:
+            await self._close_conversation()  # the dropped session is dead — ② restarts a fresh one
+            return (
+                panels.render_stepper(2),
+                panels.render_narrative("recycle"),
+                panels.render_architecture(
+                    "before", self.legacy_names(), sticky=True, store=True,
+                    served=served, down=[pod],
+                ),
+                panels.render_results_table(result),
+                panels.render_log_proof(
+                    None,
+                    headline="the pinned pod is gone",
+                    subtitle="its live session went with it — the same conversation now fails",
+                ),
+            )
         return (
             panels.render_stepper(3),
             panels.render_narrative("recycle_survive"),
-            panels.render_architecture(
-                "after", self.modern_names(), served=served, down=down
-            ),
+            panels.render_architecture("after", self.modern_names(), served=served, down=[pod]),
             panels.render_results_table(result),
             panels.render_log_proof(
                 None,
@@ -240,10 +233,24 @@ class Demo:
             ),
         )
 
+    def _recycle_needs_session(self) -> tuple[str, str, str, str, str]:
+        return (
+            panels.render_stepper(0),
+            panels.render_narrative("recycle_none"),
+            panels.render_architecture("before", self.legacy_names()),
+            "",
+            panels.render_log_proof(
+                None,
+                headline="no live session yet",
+                subtitle="run ② Add the tax or ③ Go stateless first, then recycle its pod",
+            ),
+        )
+
     async def beat3_stateless(self) -> tuple[str, str, str, str, str]:
         await self._post("/target", {"upstreams": self.modern})
         await self._post("/config", {"sticky": False})
-        result = await self.runner.run_act("auto")
+        await self._revive_all()
+        result = await self._start_conversation("auto")  # a live session, bound to no pod
         return (
             panels.render_stepper(3),
             panels.render_narrative("stateless"),
@@ -260,6 +267,7 @@ class Demo:
         return [_svc_short(u) for u in self.modern]
 
     async def beat4_proof(self) -> tuple[str, str, str, str, str]:
+        await self._close_conversation()
         result = await self.scale_runner.run_blast(60)
         served = result.instances
         logs = await self._pull_logs(

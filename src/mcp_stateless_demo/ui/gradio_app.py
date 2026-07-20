@@ -43,8 +43,11 @@ class Demo:
         self.legacy_svc = settings.legacy_service_list()
         self.modern_svc = settings.modern_service_list()
         self.scale_svc = settings.scale_service
+        self.proxy_svc = settings.proxy_service
         self.project = settings.gcp_project_or_none
-        self._log_ctx: tuple[list[str], str, str, str | None, datetime | None] | None = None
+        self._log_ctx: (
+            tuple[list[str], str, str, str | None, datetime | None, bool] | None
+        ) = None
         # The live agent session held across clicks (② / ③ start it, Recycle continues it).
         # Client-side plumbing that models "one agent, one session" — see runner.Conversation.
         self._conv: Conversation | None = None
@@ -93,15 +96,17 @@ class Demo:
         subtitle: str,
         contains: str | None,
         since: datetime | None = None,
-        retries: int = 4,
-        delay: float = 3.0,
+        show_instances: bool = True,
+        retries: int = 5,
+        delay: float = 2.0,
     ) -> str:
         # Remember the real-log context (incl. the beat's start) so "↻ Refresh logs" re-pulls
         # the SAME scoped window (Cloud Logging ingestion can lag the first attempts).
-        self._log_ctx = (services, headline, subtitle, contains, since)
+        self._log_ctx = (services, headline, subtitle, contains, since, show_instances)
         if not services:
             return panels.render_log_proof(None, headline=headline, subtitle=subtitle)
         best: LogProof | None = None
+        prev_count = -1
         for attempt in range(retries):
             proofs = await asyncio.gather(
                 *[
@@ -117,11 +122,17 @@ class Demo:
                 ]
             )
             best = _merge(proofs, services[0])
-            if best.ok and best.instances:
+            count = len(best.lines)
+            # Cloud Logging ingests over a few seconds — don't return on the first line that
+            # lands; wait until the count stops growing so the panel shows the full picture.
+            if best.ok and count > 0 and count == prev_count:
                 break
+            prev_count = count
             if attempt < retries - 1:
                 await asyncio.sleep(delay)
-        return panels.render_log_proof(best, headline=headline, subtitle=subtitle)
+        return panels.render_log_proof(
+            best, headline=headline, subtitle=subtitle, show_instances=show_instances
+        )
 
     async def refresh_logs(self) -> str:
         """Re-pull the most recent real-log context on demand (ingestion-lag catch-up)."""
@@ -133,14 +144,15 @@ class Demo:
                 subtitle="this step's proof is the requests table above",
                 note="live Cloud Run logs run on ① ② ③ and ④ — nothing to refresh on this step",
             )
-        services, headline, subtitle, contains, since = ctx
+        services, headline, subtitle, contains, since, show_instances = ctx
         return await self._pull_logs(
             services,
             headline=headline,
             subtitle=subtitle,
             contains=contains,
             since=since,
-            retries=1,
+            show_instances=show_instances,
+            retries=2,
         )
 
     # ── beats ──────────────────────────────────────────────────────────────────────────
@@ -169,8 +181,8 @@ class Demo:
         logs = await self._pull_logs(
             self.legacy_svc,
             headline="Cloud Run logs — the scale break (legacy)",
-            subtitle="round-robin sends the follow-up to an instance that never saw "
-            "the session → 404",
+            subtitle="the 404s are the 'Session not found' failures — follow-ups that "
+            "round-robined to an instance that never minted the session (2 distinct ids = split)",
             contains="POST /mcp",
             since=since,
         )
@@ -233,13 +245,16 @@ class Demo:
 
         # The session's REAL Cloud Run logs, scoped to when it started (refreshable).
         if legacy:
+            # The drop's failures are proxy 503s (the pod is gone, so no instance log). Pull the
+            # proxy's own stdout — it shows the 200s to the pinned pod, then 503s once it's cut off.
             logs = await self._pull_logs(
-                self.legacy_svc,
-                headline=f"Cloud Run logs — this session lived on {pod}",
-                subtitle=f"real stdout: {pod} served every call — recycling it is what dropped the "
-                "session (the drop itself is a proxy 503, so it's in the FAIL rows above)",
+                [self.proxy_svc],
+                headline="Cloud Run logs — the drop, at the load balancer",
+                subtitle=f"the proxy forwarded this session to {pod} (200s); after {pod} was "
+                "recycled the next calls have no instance to reach → 503 (that's the drop)",
                 contains="POST /mcp",
                 since=self._conv_since,
+                show_instances=False,
             )
         else:
             logs = await self._pull_logs(

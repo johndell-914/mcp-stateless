@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     scale_upstream: str = ""
     # Cloud Run service names for the live log-proof panel; gcp_project "" = auto-detect via ADC
     scale_service: str = "mcp-stateless-scale"
+    proxy_service: str = "mcp-stateless-proxy"  # its logs show the 503s of a recycle drop
     legacy_services: str = ""
     modern_services: str = ""
     gcp_project: str = ""

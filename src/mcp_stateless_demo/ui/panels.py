@@ -421,6 +421,7 @@ def render_log_proof(
     headline: str,
     subtitle: str = "",
     note: str = "run a step to pull live logs…",
+    show_instances: bool = True,
 ) -> str:
     term_bg = "#0b1020"
     if proof is None:
@@ -479,6 +480,8 @@ def render_log_proof(
         count_chip = (
             f'<span style="padding:3px 10px;border-radius:999px;background:{_OK}1f;color:{_OK};'
             f'font:700 13px {_SANS}">{proof.instance_count} distinct instances</span>'
+            if show_instances
+            else ""
         )
     sub = (
         f'<div style="font:12px {_SANS};color:{_MUTED};margin-top:2px">{subtitle}</div>'

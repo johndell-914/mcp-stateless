@@ -321,7 +321,7 @@ def _recycle_divider() -> str:
         f"color:{_AMBER};font:700 12px {_SANS};letter-spacing:.03em;"
         f"background:{_AMBER}14;border-top:1px dashed {_AMBER}66;"
         f'border-bottom:1px dashed {_AMBER}66">'
-        "💥 pod recycled — the same session continues below</td></tr>"
+        "💥 pod recycled — the agent's next turn on the same session ↓</td></tr>"
     )
 
 

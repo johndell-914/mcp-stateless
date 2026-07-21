@@ -254,8 +254,15 @@ def render_architecture(
     cards = "".join(
         _instance_card(n, down=n in down, served=n in served) for n in instances
     )
+    # Group the instance cards in a labeled box so it's obvious these are the MCP server systems
+    # (legacy-a/b, modern-a/b, or the autoscaled scale-* pods).
     grid = (
-        f'<div style="display:flex;gap:8px;flex-wrap:wrap;max-width:420px">{cards}</div>'
+        f'<div style="border:1.5px dashed {_INDIGO}66;border-radius:12px;padding:7px 9px 9px;'
+        'display:flex;flex-direction:column;gap:6px;max-width:460px">'
+        f'<div style="font:700 10px {_SANS};letter-spacing:.08em;text-transform:uppercase;'
+        f'color:{_INDIGO};text-align:center">⬡ MCP servers</div>'
+        f'<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">{cards}</div>'
+        "</div>"
     )
 
     # header + caption per view
@@ -354,10 +361,13 @@ def render_results_table(result: ActResult, recycled_after: int | None = None) -
         if recycled_after is not None and idx + 1 == recycled_after:
             rows.append(_recycle_divider())
     head = (
-        f'<tr style="text-align:left;color:{_MUTED};font:12px {_SANS}">'
-        '<th style="padding:6px 10px">#</th><th style="padding:6px 10px">tool</th>'
-        '<th style="padding:6px 10px">served by</th><th style="padding:6px 10px">cart</th>'
-        '<th style="padding:6px 10px">result</th></tr>'
+        f'<tr style="text-align:left;color:{_INK};font:700 11px {_SANS};'
+        'text-transform:uppercase;letter-spacing:.05em">'
+        f'<th style="padding:8px 10px;border-bottom:2px solid {_LINE}">#</th>'
+        f'<th style="padding:8px 10px;border-bottom:2px solid {_LINE}">tool</th>'
+        f'<th style="padding:8px 10px;border-bottom:2px solid {_LINE}">served by</th>'
+        f'<th style="padding:8px 10px;border-bottom:2px solid {_LINE}">cart</th>'
+        f'<th style="padding:8px 10px;border-bottom:2px solid {_LINE}">result</th></tr>'
     )
     return (
         f"{_ANIM}<div style=\"{_CARD}\">"

@@ -360,14 +360,17 @@ def render_results_table(result: ActResult, recycled_after: int | None = None) -
         )
         if recycled_after is not None and idx + 1 == recycled_after:
             rows.append(_recycle_divider())
+    # Styles go on each <th> (not the <tr>) with !important — Gradio's theme sets a th color
+    # directly, which would otherwise beat an inherited color and wash the headers out.
+    _th = (
+        f"padding:8px 10px;text-align:left;border-bottom:2px solid {_LINE};"
+        f"color:{_INK} !important;font:700 11px {_SANS} !important;"
+        "text-transform:uppercase;letter-spacing:.05em"
+    )
     head = (
-        f'<tr style="text-align:left;color:{_INK};font:700 11px {_SANS};'
-        'text-transform:uppercase;letter-spacing:.05em">'
-        f'<th style="padding:8px 10px;border-bottom:2px solid {_LINE}">#</th>'
-        f'<th style="padding:8px 10px;border-bottom:2px solid {_LINE}">tool</th>'
-        f'<th style="padding:8px 10px;border-bottom:2px solid {_LINE}">served by</th>'
-        f'<th style="padding:8px 10px;border-bottom:2px solid {_LINE}">cart</th>'
-        f'<th style="padding:8px 10px;border-bottom:2px solid {_LINE}">result</th></tr>'
+        f'<tr><th style="{_th}">#</th><th style="{_th}">tool</th>'
+        f'<th style="{_th}">served by</th><th style="{_th}">cart</th>'
+        f'<th style="{_th}">result</th></tr>'
     )
     return (
         f"{_ANIM}<div style=\"{_CARD}\">"

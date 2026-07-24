@@ -154,21 +154,21 @@ sequenceDiagram
 ## Security & the stateless model
 
 A fair question from any security engineer: *doesn't removing the session and the gateway remove a
-security layer?* No — and the confusion comes from three overloaded words. **This change is orthogonal
-to the trust problem, in either direction.**
+security layer?* No — and the confusion comes from three overloaded words. **This change is independent
+of the trust problem and doesn't interfere with it — in either direction.**
 
 | | What this demo removes (routing) | What security actually needs (different) | "Stateless"? |
 | --- | --- | --- | --- |
 | **Session** | `mcp-session-id` — where scratch state lives | task identity + credential scope, per conversation | **untouched** |
 | **Gateway** | sticky router — "send you back to your pod" | a policy point — pin tool metadata, filter outputs | *easier* as a stateless proxy |
-| **Contamination** | per-instance state-bleed (reduced) | cross-server tool poisoning — one bad server hijacks the set | **orthogonal** |
+| **Contamination** | per-instance state-bleed (reduced) | cross-server tool poisoning — one bad server hijacks the set | **independent** |
 
 The attacks that matter for MCP — tool poisoning, cross-server hijack, prompt injection — live at the
 **content/trust layer** (OWASP's connect-time-vs-runtime gap), not the transport. Statelessness is a
-transport/scaling change: orthogonal to the attack, and *compatible* with the defenses — per-request
-auth is the same shape as least-privilege-per-call, a stateless policy gateway scales horizontally, and
-no shared session memory removes one blast-radius surface. The honest ceiling: **compatible with the
-defenses, not itself a defense.**
+transport/scaling change: independent of the attack (it neither causes nor cures it) and *compatible*
+with the defenses. Per-request auth is the same shape as least-privilege-per-call, a stateless policy
+gateway scales horizontally, and no shared session memory removes one blast-radius surface. The honest
+ceiling: **compatible with the defenses, not itself a defense.**
 
 Prompt injection is architecturally unsolved (OWASP LLM Top-10 #1 every edition; the frontier labs agree
 it can't be fully solved in today's models), so the discipline is **containment, not prevention**:

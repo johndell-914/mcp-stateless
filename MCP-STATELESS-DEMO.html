@@ -280,7 +280,7 @@ body{font-family:var(--sans);background:
             <tr><td class="word">Contamination</td>
               <td>per-instance state-bleed <span class="muted">(reduced)</span></td>
               <td>cross-server tool poisoning — one bad server hijacks the set</td>
-              <td class="warn">orthogonal</td></tr>
+              <td class="warn">independent</td></tr>
           </tbody>
         </table></div>
       </div>
@@ -289,8 +289,8 @@ body{font-family:var(--sans);background:
         <h4>Where “stateless” actually sits</h4>
         <p>The attacks — tool poisoning, cross-server hijack, prompt injection — live at the
           <b>content / trust layer</b> (OWASP's connect-time-vs-runtime gap). Statelessness is a
-          <b>transport / scaling</b> change. Different layer, so it's <b>orthogonal</b> to the attack —
-          and <b>compatible</b> with the defenses:</p>
+          <b>transport / scaling</b> change. Different layer, so it's <b>independent and non-interfering</b> —
+          it neither causes nor cures the attack — and <b>compatible</b> with the defenses:</p>
         <ul>
           <li>Per-request auth is the same shape as <b>least-privilege per call</b>.</li>
           <li>A <b>stateless policy gateway</b> scales horizontally — that's the whole point.</li>

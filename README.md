@@ -43,7 +43,7 @@ and the client mode do.
 
 | Surface | What it is | How to view |
 | --- | --- | --- |
-| **Interactive diagram** | Self-contained HTML — Narrative / Before / After / The Change / At Scale / Request Flow tabs, a Technical⇄Plain toggle, light/dark + fullscreen | Open [`MCP-STATELESS-DEMO.html`](MCP-STATELESS-DEMO.html) in any browser (no build, no network) |
+| **Interactive diagram** | Self-contained HTML — Narrative / Before / After / The Change / At Scale / Request Flow / Security tabs, a Technical⇄Plain toggle, light/dark + fullscreen | Open [`MCP-STATELESS-DEMO.html`](MCP-STATELESS-DEMO.html) in any browser (no build, no network) |
 | **Code map** | Self-contained HTML — an architecture diagram of `src/mcp_stateless_demo` (Modules / Tool call / Log proof tabs) for ramping on the code | Open [`mcp-stateless_architecture.html`](mcp-stateless_architecture.html) in any browser |
 | **Live demo** | A Gradio app that drives real MCP servers on Cloud Run and shows live results + real Cloud Run logs | Run locally (below) or deploy your own |
 
@@ -148,6 +148,37 @@ sequenceDiagram
 `create_cart` is the same path minus the decode: it `insert`s a row (`store.create()`) and returns `codec.encode(cart_id)` — the signed handle the client carries into every later call.
 
 **Why this shape matters:** `add_item` needs *nothing* from server memory — the `cart_token` + Postgres hold all the state, so any instance can serve any call. That's the explicit-handle pattern, and it's why flipping `stateless_http` is a two-line change rather than a rewrite. (The interactive diagram's **Request Flow** tab walks this same sequence visually.)
+
+---
+
+## Security & the stateless model
+
+A fair question from any security engineer: *doesn't removing the session and the gateway remove a
+security layer?* No — and the confusion comes from three overloaded words. **This change is orthogonal
+to the trust problem, in either direction.**
+
+| | What this demo removes (routing) | What security actually needs (different) | "Stateless"? |
+| --- | --- | --- | --- |
+| **Session** | `mcp-session-id` — where scratch state lives | task identity + credential scope, per conversation | **untouched** |
+| **Gateway** | sticky router — "send you back to your pod" | a policy point — pin tool metadata, filter outputs | *easier* as a stateless proxy |
+| **Contamination** | per-instance state-bleed (reduced) | cross-server tool poisoning — one bad server hijacks the set | **orthogonal** |
+
+The attacks that matter for MCP — tool poisoning, cross-server hijack, prompt injection — live at the
+**content/trust layer** (OWASP's connect-time-vs-runtime gap), not the transport. Statelessness is a
+transport/scaling change: orthogonal to the attack, and *compatible* with the defenses — per-request
+auth is the same shape as least-privilege-per-call, a stateless policy gateway scales horizontally, and
+no shared session memory removes one blast-radius surface. The honest ceiling: **compatible with the
+defenses, not itself a defense.**
+
+Prompt injection is architecturally unsolved (OWASP LLM Top-10 #1 every edition; the frontier labs agree
+it can't be fully solved in today's models), so the discipline is **containment, not prevention**:
+least-privilege per task, environment separation, a human on irreversible actions, treating tool
+*outputs* as untrusted input, and pinning/verifying tool metadata at a gateway.
+
+> **What this demo does and doesn't claim.** It removes the *routing* tax so you can scale statelessly.
+> It is deliberately **not** a security demo: the `cart_token` is a signed *reference*, not a production
+> auth token, and there's no policy gateway in the picture. The interactive diagram's **Security** tab
+> covers this in full.
 
 ---
 

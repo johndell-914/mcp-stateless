@@ -55,6 +55,20 @@ body{font-family:var(--sans);background:
 .nar-card p{font:14px/1.6 var(--sans);color:var(--muted);}
 .nar-card b{color:var(--text);}
 .nar-card code{font:.9em var(--mono);color:var(--accent);background:var(--card2);padding:1px 6px;border-radius:5px;}
+.nar-card ul{margin:6px 0 0;padding-left:18px;}
+.nar-card li{font:14px/1.55 var(--sans);color:var(--muted);margin:4px 0;}
+.nar-card li b{color:var(--text);}
+.nar-card .ceiling{margin-top:9px;font-style:italic;color:var(--text);}
+.sec-wrap{overflow-x:auto;margin-top:9px;}
+.sec-table{width:100%;border-collapse:collapse;min-width:560px;}
+.sec-table th,.sec-table td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top;font:13px/1.45 var(--sans);color:var(--muted);}
+.sec-table thead th{font:700 10.5px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint);}
+.sec-table td.word{font-weight:800;color:var(--text);white-space:nowrap;}
+.sec-table td.ok{color:var(--ok);font-weight:700;}
+.sec-table td.warn{color:var(--amber);font-weight:700;}
+.sec-table .muted{color:var(--faint);}
+.sec-table code{font:.9em var(--mono);color:var(--accent);background:var(--card2);padding:1px 5px;border-radius:5px;}
+.sec-quote{margin-top:16px;padding:14px 18px;border-left:3px solid var(--accent);background:var(--card);border:1px solid var(--border);border-radius:9px;font:italic 15px/1.55 var(--sans);color:var(--text);}
 .nar-steps{margin-top:20px;padding-top:18px;border-top:1px solid var(--border);}
 .nar-steps .lbl{font:700 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;
   color:var(--faint);margin-bottom:12px;text-align:center;}
@@ -240,6 +254,77 @@ body{font-family:var(--sans);background:
           <div class="d">60 agents, real Cloud Run autoscale, proven by the platform's logs.</div></div>
       </div>
     </div>
+  </div>
+
+  <div class="narrative-pane" id="securityPane" style="display:none">
+    <div class="nar-hook">The session was doing <span class="accent">routing</span> — not security.</div>
+    <div class="nar-sub">Going stateless changes the transport. It doesn't touch the trust problem — in
+      either direction. Here's the honest picture for the security-minded.</div>
+    <div class="nar-body">
+      <div class="nar-card" style="--tone:var(--accent)">
+        <h4>The three words that get conflated</h4>
+        <p>Almost every “but you deleted a security layer” objection comes from overloading one of
+          these. This demo removes the <b>routing</b> meaning; security lives in the <b>other</b> one.</p>
+        <div class="sec-wrap"><table class="sec-table">
+          <thead><tr><th></th><th>What this demo removes (routing)</th>
+            <th>What security actually needs (different)</th><th>Stateless?</th></tr></thead>
+          <tbody>
+            <tr><td class="word">Session</td>
+              <td><code>mcp-session-id</code> — where scratch state lives</td>
+              <td>task identity + credential scope, per conversation</td>
+              <td class="ok">untouched</td></tr>
+            <tr><td class="word">Gateway</td>
+              <td>sticky router — “send you back to your pod”</td>
+              <td>policy point — pin tool metadata, filter outputs</td>
+              <td class="ok">easier as a stateless proxy</td></tr>
+            <tr><td class="word">Contamination</td>
+              <td>per-instance state-bleed <span class="muted">(reduced)</span></td>
+              <td>cross-server tool poisoning — one bad server hijacks the set</td>
+              <td class="warn">orthogonal</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+
+      <div class="nar-card" style="--tone:var(--ok)">
+        <h4>Where “stateless” actually sits</h4>
+        <p>The attacks — tool poisoning, cross-server hijack, prompt injection — live at the
+          <b>content / trust layer</b> (OWASP's connect-time-vs-runtime gap). Statelessness is a
+          <b>transport / scaling</b> change. Different layer, so it's <b>orthogonal</b> to the attack —
+          and <b>compatible</b> with the defenses:</p>
+        <ul>
+          <li>Per-request auth is the same shape as <b>least-privilege per call</b>.</li>
+          <li>A <b>stateless policy gateway</b> scales horizontally — that's the whole point.</li>
+          <li>No shared session memory removes one <b>blast-radius surface</b>.</li>
+        </ul>
+        <p class="ceiling">Ceiling to claim: <b>compatible with the defenses, not itself a defense.</b></p>
+      </div>
+
+      <div class="nar-card" style="--tone:var(--amber)">
+        <h4>Prevention → containment (the honest posture)</h4>
+        <p>Prompt injection is <b>architecturally unsolved</b> — #1 on OWASP's LLM Top-10 every edition;
+          OpenAI, Anthropic &amp; Google DeepMind all say it can't be fully solved in today's models;
+          the best published defense still misses ~1 in 10. So the discipline shifted from prevention to
+          <b>containment</b>: assume it works, shrink the blast radius.</p>
+        <ul>
+          <li><b>Least-privilege</b> credentials, per task — not one identity that can call everything.</li>
+          <li><b>Environment separation</b> — never wire agents straight to prod.</li>
+          <li><b>Human in the loop</b> on irreversible actions.</li>
+          <li>Treat tool <b>outputs</b> as untrusted input; <b>pin &amp; verify</b> tool metadata at a gateway.</li>
+        </ul>
+      </div>
+
+      <div class="nar-card" style="--tone:var(--warn)">
+        <h4>What this demo does &amp; doesn't claim</h4>
+        <p><b>Does:</b> remove the <i>routing</i> tax so you can scale statelessly.<br>
+          <b>Doesn't:</b> the <code>cart_token</code> is a signed <b>reference</b>, not a production auth
+          token, and there's no policy gateway here. This illustrates the protocol &amp; scaling change —
+          deliberately not the security stack.</p>
+      </div>
+    </div>
+
+    <div class="sec-quote">“The session was doing routing, not security — and so was the gateway.
+      Statelessness doesn't touch the tool-trust problem in either direction; it just stops
+      entangling it with load balancing.”</div>
   </div>
 
   <div id="flowArea">
@@ -444,6 +529,7 @@ const TABS = {
        nt:'Since the ticket and the database do all the work, it doesn’t matter which machine answers. That’s the whole point.'},
     ]
   },
+  security: { label:'Security', icon:'🔒', tone:'accent' },
 };
 
 // ── render ─────────────────────────────────────────────────────────────────────────────
@@ -520,9 +606,11 @@ function render(){
   document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
   buildTabs();
   const isNar = curTab==='narrative';
+  const isSec = curTab==='security';
   $('narrativePane').style.display = isNar ? 'block' : 'none';
-  $('flowArea').style.display = isNar ? 'none' : 'block';
-  if(isNar) return;
+  $('securityPane').style.display = isSec ? 'block' : 'none';
+  $('flowArea').style.display = (isNar||isSec) ? 'none' : 'block';
+  if(isNar||isSec) return;
   $('stageTitle').textContent=TABS[curTab].stageTitle;
   buildFlow();
   applyStep();

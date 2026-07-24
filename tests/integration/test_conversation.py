@@ -55,6 +55,27 @@ async def test_conversation_close_is_idempotent() -> None:
         await conv.close()  # second close is a no-op, must not raise
 
 
+async def test_scale_break_succeeds_then_breaks_on_scale_out() -> None:
+    # ① 'Scale it': create the cart while one instance is behind the LB (works), then scale out —
+    # the same session's follow-ups round-robin and the ones on the new instance break.
+    async with cluster(stateless=False, n=2) as (url, state):
+        both = list(state.upstreams)
+        state.upstreams = both[:1]  # phase 1: a single instance behind the LB
+
+        async def scale_out() -> None:
+            state.upstreams = both  # phase 2: add the second instance → round-robin
+
+        conv = Conversation(url, mode="legacy")
+        try:
+            result = await conv.scale_break(scale_out)
+        finally:
+            await conv.close()
+
+    rows = result.rows
+    assert rows[0].tool == "create_cart" and rows[0].ok, "create must succeed on the one instance"
+    assert any(not r.ok for r in rows[1:]), "a scaled-out follow-up must break (session not found)"
+
+
 async def test_continue_act_adds_a_distinct_item() -> None:
     # The post-recycle turn must not re-add an item already in the cart (no "avocado … avocado").
     async with cluster(stateless=True, n=2) as (url, _state):

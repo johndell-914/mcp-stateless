@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from mcp import Client
@@ -256,6 +257,21 @@ class Conversation:
         in_cart = {i["name"] for r in self.rows if r.cart for i in r.cart}
         pool = [n for n in _BASKET if n not in in_cart] or _BASKET
         await self.add(random.choice(pool), random.randint(1, 3))
+        await self.get()
+        return self.result()
+
+    async def scale_break(self, on_scale_out: Callable[[], Awaitable[None]]) -> ActResult:
+        """The ① 'Scale it' act: create the cart while only ONE instance is behind the LB, so it
+        succeeds (a real "works on your laptop" moment). Then ``on_scale_out`` adds a second
+        instance; the same session's follow-ups round-robin, and the ones that miss the session's
+        instance get 'Session not found'. A genuine initial success, then the break — no coin
+        flip on create, and clean errors (the token is valid, so no 'malformed token' noise).
+        """
+        items = _random_items()
+        await self.create()  # phase 1 — succeeds on the one instance that holds the session
+        await on_scale_out()  # add a second instance; routing is now round-robin
+        for name, qty in items:  # phase 2 — some land on the instance that never saw the handshake
+            await self.add(name, qty)
         await self.get()
         return self.result()
 

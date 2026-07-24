@@ -125,9 +125,10 @@ _NARRATIVE: dict[str, tuple[str, str, str]] = {
     ),
     "scale": (
         _ERR,
-        "The agent forgot who it was talking to.",
-        "Plain round-robin, two instances. The session is minted on one instance; the next "
-        "call lands on the other — “Session not found.” Every follow-up request is a coin flip.",
+        "It works on one instance — then you scale out.",
+        "create_cart succeeds on the first instance, which holds the session. Add a second "
+        "instance and the same agent's follow-ups round-robin — the ones that miss the "
+        "session's instance get “Session not found.” The naive deploy, breaking under scale.",
     ),
     "sticky": (
         _AMBER,
@@ -320,19 +321,26 @@ def render_architecture(
 
 
 # ── request results table ───────────────────────────────────────────────────────────────
-def _recycle_divider() -> str:
-    """A boundary row marking where 💥 Recycle happened — rows below are the SAME session
-    continuing (green = survived on another instance, red = dropped)."""
+_RECYCLE_DIVIDER = "💥 pod recycled — the agent's next turn on the same session ↓"
+
+
+def _divider_row(label: str) -> str:
+    """A boundary row marking a mid-act change (a recycle, a scale-out) — the rows below are the
+    SAME session continuing, so the outcome above vs below reads at a glance."""
     return (
         '<tr><td colspan="5" style="padding:7px 10px;text-align:center;'
         f"color:{_AMBER};font:700 12px {_SANS};letter-spacing:.03em;"
         f"background:{_AMBER}14;border-top:1px dashed {_AMBER}66;"
-        f'border-bottom:1px dashed {_AMBER}66">'
-        "💥 pod recycled — the agent's next turn on the same session ↓</td></tr>"
+        f'border-bottom:1px dashed {_AMBER}66">{label}</td></tr>'
     )
 
 
-def render_results_table(result: ActResult, recycled_after: int | None = None) -> str:
+def render_results_table(
+    result: ActResult,
+    *,
+    divider_after: int | None = None,
+    divider_label: str = _RECYCLE_DIVIDER,
+) -> str:
     rows = []
     for idx, r in enumerate(result.rows):
         ok = r.ok
@@ -358,8 +366,8 @@ def render_results_table(result: ActResult, recycled_after: int | None = None) -
             f'<td style="padding:7px 10px;font:13px {_SANS}">{detail}</td>'
             f'<td style="padding:7px 10px">{mark}</td></tr>'
         )
-        if recycled_after is not None and idx + 1 == recycled_after:
-            rows.append(_recycle_divider())
+        if divider_after is not None and idx + 1 == divider_after:
+            rows.append(_divider_row(divider_label))
     # Styles go on each <th> (not the <tr>) with !important — Gradio's theme sets a th color
     # directly, which would otherwise beat an inherited color and wash the headers out.
     _th = (

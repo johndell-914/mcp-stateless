@@ -35,7 +35,7 @@ def test_results_table_recycle_divider_marks_the_boundary() -> None:
     ]
     result = ActResult(mode="auto", rows=rows)
     assert "pod recycled" not in panels.render_results_table(result)  # off by default
-    html = panels.render_results_table(result, recycled_after=2)  # divider after rows 1-2
+    html = panels.render_results_table(result, divider_after=2)  # divider after rows 1-2
     assert html.index("apple") < html.index("pod recycled") < html.index("banana")
 
 

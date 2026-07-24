@@ -173,11 +173,20 @@ class Demo:
 
     async def beat1_scale(self) -> tuple[str, str, str, str, str]:
         await self._close_conversation()  # the naive break is a one-shot; no live session to hold
-        await self._post("/target", {"upstreams": self.legacy})
+        await self._post("/target", {"upstreams": self.legacy[:1]})  # phase 1: ONE instance
         await self._post("/config", {"sticky": False})
         await self._revive_all()
         since = datetime.now(UTC)
-        result = await self.runner.run_act("legacy")
+
+        async def scale_out() -> None:  # phase 2: add the second instance → round-robin
+            await self._post("/target", {"upstreams": self.legacy})
+
+        conv = self.runner.conversation("legacy")
+        try:
+            result = await conv.scale_break(scale_out)
+        finally:
+            await conv.close()
+
         logs = await self._pull_logs(
             self.legacy_svc,
             headline="Cloud Run logs — the scale break (legacy)",
@@ -190,7 +199,11 @@ class Demo:
             panels.render_stepper(1),
             panels.render_narrative("scale"),
             panels.render_architecture("before", self.legacy_names(), served=result.instances),
-            panels.render_results_table(result),
+            panels.render_results_table(
+                result,
+                divider_after=1,  # create succeeded on the 1st instance; then we scaled out
+                divider_label="⬆ scaled out to a 2nd instance — same session, now round-robined ↓",
+            ),
             logs,
         )
 
@@ -276,14 +289,14 @@ class Demo:
                     "before", self.legacy_names(), sticky=True, store=True,
                     served=served, down=[pod],
                 ),
-                panels.render_results_table(result, recycled_after=before),
+                panels.render_results_table(result, divider_after=before),
                 logs,
             )
         return (
             panels.render_stepper(3),
             panels.render_narrative("recycle_survive"),
             panels.render_architecture("after", self.modern_names(), served=served, down=[pod]),
-            panels.render_results_table(result, recycled_after=before),
+            panels.render_results_table(result, divider_after=before),
             logs,
         )
 

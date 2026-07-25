@@ -123,15 +123,27 @@ class ActRunner:
         return Conversation(self.proxy_url, mode)
 
     async def run_blast(self, total: int = 50) -> BlastResult:
+        """Fire ``total`` independent stateless agents at the proxy. Each creates a cart and then
+        adds one random item — two stateless requests that can land on *any* instance, so the
+        blast writes real shopping activity (not empty carts) while still proving fan-out. The
+        instance tally is keyed by where each cart was *created*, so "N instances" is unchanged.
+        """
+
         async def one() -> tuple[bool, str | None]:
             try:
                 async with Client(self.proxy_url, mode="auto") as client:
-                    result = await client.call_tool("create_cart", {})
-                    if result.is_error:
+                    created = await client.call_tool("create_cart", {})
+                    if created.is_error:
                         return False, None
-                    payload: dict[str, Any] = json.loads(_result_text(result))
+                    payload: dict[str, Any] = json.loads(_result_text(created))
                     served: str | None = payload.get("served_by")
-                    return True, served
+                    token = str(payload.get("cart_token", ""))
+                    added = await client.call_tool(
+                        "add_item",
+                        {"cart_token": token, "name": random.choice(_BASKET),
+                         "qty": random.randint(1, 3)},
+                    )
+                    return (not added.is_error), served
             except Exception:  # noqa: BLE001
                 return False, None
 

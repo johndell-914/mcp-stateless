@@ -49,9 +49,9 @@ async def _wait(server: uvicorn.Server) -> None:
 
 
 @contextlib.asynccontextmanager
-async def cluster(
+async def cluster_with_store(
     *, stateless: bool, n: int = 2, sticky: bool = False
-) -> AsyncIterator[tuple[str, ProxyState]]:
+) -> AsyncIterator[tuple[str, ProxyState, MemoryCartStore]]:
     store = MemoryCartStore()  # shared across instances = shared app state
     servers: list[uvicorn.Server] = []
     urls: list[str] = []
@@ -72,11 +72,19 @@ async def cluster(
     proxy_srv, proxy_url = _serve(create_proxy_app(state))
     await _wait(proxy_srv)
     try:
-        yield f"{proxy_url}/mcp", state
+        yield f"{proxy_url}/mcp", state, store
     finally:
         for srv in [*servers, proxy_srv]:
             srv.should_exit = True
         await asyncio.sleep(0.1)
+
+
+@contextlib.asynccontextmanager
+async def cluster(
+    *, stateless: bool, n: int = 2, sticky: bool = False
+) -> AsyncIterator[tuple[str, ProxyState]]:
+    async with cluster_with_store(stateless=stateless, n=n, sticky=sticky) as (url, state, _store):
+        yield url, state
 
 
 def _payload(result: Any) -> dict[str, Any]:

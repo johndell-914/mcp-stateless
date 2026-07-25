@@ -133,6 +133,11 @@ body{font-family:var(--sans);background:
   text-transform:uppercase;padding:2px 7px;border-radius:5px;background:var(--warn-glow);color:var(--warn);}
 .node.breaking{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn),0 0 22px var(--warn-glow);}
 .node.breaking .breaks-badge{display:inline-block;}
+/* MCP-servers group box — the same grouping the live Gradio diagram uses */
+.col.srv-group{border:1.4px dashed var(--accent);border-radius:14px;padding:13px 15px 16px;
+  background:var(--accent-glow);}
+.srv-label{font:800 .58em var(--sans);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:2px;}
 
 /* step panel */
 .step{background:var(--surface);border:1px solid var(--border);border-radius:14px;margin-top:16px;
@@ -551,8 +556,15 @@ function buildTabs(){
 function buildFlow(){
   const t=TABS[curTab];
   const flow=$('flow'); flow.innerHTML='';
+  const SRV = new Set(['instA','instB','mA','mB','mC','scaleN']);  // the MCP-server instance nodes
   t.stages.forEach((col,ci)=>{
     const c=document.createElement('div'); c.className='col';
+    if(col.some(nid=>SRV.has(nid))){          // this column is the pool of MCP servers
+      c.classList.add('srv-group');
+      const lbl=document.createElement('div'); lbl.className='srv-label';
+      lbl.textContent='⬡ MCP servers';
+      c.appendChild(lbl);
+    }
     col.forEach(nid=>{
       const n=N[nid]; const el=document.createElement('div');
       el.className='node'; el.dataset.node=nid;

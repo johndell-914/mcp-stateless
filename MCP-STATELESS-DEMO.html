@@ -405,7 +405,7 @@ const TABS = {
        nt:'When the assistant starts helping you, the server opens a “session” for you — and that session only exists on the one machine that answered first.'},
       {on:['agent','instB'], warn:['instB'], ghost:['sticky','store'], lit:[], k:'warn',
        t:'Just scale it → it breaks',
-       tech:'Add a second instance behind a plain round-robin LB. With no pinning, the next tool call lands on B, which never saw the session → <b>“Session not found.”</b> That failure is exactly what the gateway below exists to prevent.',
+       tech:'Add a second instance behind a plain round-robin LB. With no pinning, the next tool call lands on B, which never saw the session → <b>“Session not found.”</b> That failure is exactly what the <b>sticky gateway</b> — the forced fix you’ll add next — exists to prevent.',
        nt:'Add a second machine to handle more people. With nothing keeping track, your next message can go to the second machine — which has no idea who you are. The assistant forgets you mid-sentence.'},
       {on:['sticky','instA'], ghost:['store'], lit:[0], k:'amber',
        t:'The forced fix: sticky routing',

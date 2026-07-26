@@ -399,7 +399,11 @@ def build_demo(settings: Settings | None = None) -> gr.Blocks:
                     b4 = gr.Button("④ Prove it at scale ⚡", variant="primary")
                     recycle = gr.Button("💥 Recycle a pod")
                     refresh = gr.Button("↻ Refresh logs")
-                    reset = gr.Button("↺ Reset")
+                # Reset lives OUTSIDE the operational group (with a spacer + a distinct glyph and
+                # a smaller, quieter style) so it isn't fat-fingered in place of "↻ Refresh logs"
+                # — the two used near-identical circular-arrow glyphs stacked flush together.
+                gr.HTML("<div style='height:10px'></div>")
+                reset = gr.Button("🧹 Reset demo", variant="secondary", size="sm")
                 narrative = gr.HTML(panels.render_narrative("intro"))  # what the current step does
             with gr.Column(scale=3):
                 arch = gr.HTML(panels.render_architecture("before", d.legacy_names()))

@@ -263,16 +263,18 @@ body{font-family:var(--sans);background:
 
   <div class="narrative-pane" id="securityPane" style="display:none">
     <div class="nar-hook">The session was doing <span class="accent">routing</span> — not security.</div>
-    <div class="nar-sub">Going stateless changes the transport. It doesn't touch the trust problem — in
-      either direction. Here's the honest picture for the security-minded.</div>
+    <div class="nar-sub">Going stateless changes the transport. Security lives at a different layer —
+      and knowing exactly which layer is which is a five-minute lesson. Here's the map.</div>
     <div class="nar-body">
       <div class="nar-card" style="--tone:var(--accent)">
-        <h4>The three words that get conflated</h4>
-        <p>Almost every “but you deleted a security layer” objection comes from overloading one of
-          these. This demo removes the <b>routing</b> meaning; security lives in the <b>other</b> one.</p>
+        <h4>Three words, two meanings each</h4>
+        <p><i>Session</i>, <i>gateway</i>, and <i>contamination</i> each name two different jobs — a
+          <b>routing</b> job and a <b>security</b> job. Once you read them as separate columns, the
+          rest of this tab is easy: stateless rewrites the routing column and leaves the security
+          column alone.</p>
         <div class="sec-wrap"><table class="sec-table">
-          <thead><tr><th></th><th>What this demo removes (routing)</th>
-            <th>What security actually needs (different)</th><th>Stateless?</th></tr></thead>
+          <thead><tr><th></th><th>The routing meaning (this demo removes it)</th>
+            <th>The security meaning (unchanged, still yours to build)</th><th>Stateless?</th></tr></thead>
           <tbody>
             <tr><td class="word">Session</td>
               <td><code>mcp-session-id</code> — where scratch state lives</td>
@@ -291,25 +293,26 @@ body{font-family:var(--sans);background:
       </div>
 
       <div class="nar-card" style="--tone:var(--ok)">
-        <h4>Where “stateless” actually sits</h4>
+        <h4>Where stateless sits in the stack</h4>
         <p>The attacks — tool poisoning, cross-server hijack, prompt injection — live at the
           <b>content / trust layer</b> (OWASP's connect-time-vs-runtime gap). Statelessness is a
-          <b>transport / scaling</b> change. Different layer, so it's <b>independent and non-interfering</b> —
-          it neither causes nor cures the attack — and <b>compatible</b> with the defenses:</p>
+          <b>transport / scaling</b> change. Different layers, so the two are <b>independent and
+          non-interfering</b> — stateless neither causes nor cures an attack — and they compose
+          cleanly with the defenses:</p>
         <ul>
           <li>Per-request auth is the same shape as <b>least-privilege per call</b>.</li>
           <li>A <b>stateless policy gateway</b> scales horizontally — that's the whole point.</li>
           <li>No shared session memory removes one <b>blast-radius surface</b>.</li>
         </ul>
-        <p class="ceiling">Ceiling to claim: <b>compatible with the defenses, not itself a defense.</b></p>
+        <p class="ceiling">The take-away: <b>stateless is compatible with the defenses — it isn't one itself.</b></p>
       </div>
 
       <div class="nar-card" style="--tone:var(--amber)">
-        <h4>Prevention → containment (the honest posture)</h4>
+        <h4>Prevention → containment — how the field moved</h4>
         <p>Prompt injection is <b>architecturally unsolved</b> — #1 on OWASP's LLM Top-10 every edition;
           OpenAI, Anthropic &amp; Google DeepMind all say it can't be fully solved in today's models;
           the best published defense still misses ~1 in 10. So the discipline shifted from prevention to
-          <b>containment</b>: assume it works, shrink the blast radius.</p>
+          <b>containment</b>: assume an injection lands, and shrink what it can reach.</p>
         <ul>
           <li><b>Least-privilege</b> credentials, per task — not one identity that can call everything.</li>
           <li><b>Environment separation</b> — never wire agents straight to prod.</li>
@@ -319,17 +322,17 @@ body{font-family:var(--sans);background:
       </div>
 
       <div class="nar-card" style="--tone:var(--warn)">
-        <h4>What this demo does &amp; doesn't claim</h4>
-        <p><b>Does:</b> remove the <i>routing</i> tax so you can scale statelessly.<br>
-          <b>Doesn't:</b> the <code>cart_token</code> is a signed <b>reference</b>, not a production auth
-          token, and there's no policy gateway here. This illustrates the protocol &amp; scaling change —
-          deliberately not the security stack.</p>
+        <h4>Where this demo stops — and what you'd build next</h4>
+        <p><b>This demo teaches:</b> the protocol &amp; scaling change — removing the <i>routing</i> tax.<br>
+          <b>You'd build next:</b> the <code>cart_token</code> is a signed <b>reference</b>, not a
+          production auth token, and there's no policy gateway here. Those are the security layers you
+          add on top — the same ones you'd add before, at the same place in the stack.</p>
       </div>
     </div>
 
-    <div class="sec-quote">“The session was doing routing, not security — and so was the gateway.
-      Statelessness doesn't touch the tool-trust problem in either direction; it just stops
-      entangling it with load balancing.”</div>
+    <div class="sec-quote">If you keep one sentence: “The session was doing routing, not security —
+      and so was the gateway. Stateless doesn't touch the tool-trust problem in either direction;
+      it just stops entangling it with load balancing.”</div>
   </div>
 
   <div id="flowArea">

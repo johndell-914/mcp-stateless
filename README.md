@@ -153,11 +153,12 @@ sequenceDiagram
 
 ## Security & the stateless model
 
-A fair question from any security engineer: *doesn't removing the session and the gateway remove a
-security layer?* No — and the confusion comes from three overloaded words. **This change is independent
-of the trust problem and doesn't interfere with it — in either direction.**
+Where does security live in this picture? Three words — *session*, *gateway*, and *contamination* —
+each name two different jobs: a **routing** job and a **security** job. Read them as separate columns
+and the model is simple: **stateless rewrites the routing column and leaves the security column
+alone** — the change is independent of the trust problem, in either direction.
 
-| | What this demo removes (routing) | What security actually needs (different) | "Stateless"? |
+| | The routing meaning (this demo removes it) | The security meaning (unchanged, still yours to build) | "Stateless"? |
 | --- | --- | --- | --- |
 | **Session** | `mcp-session-id` — where scratch state lives | task identity + credential scope, per conversation | **untouched** |
 | **Gateway** | sticky router — "send you back to your pod" | a policy point — pin tool metadata, filter outputs | *easier* as a stateless proxy |
@@ -165,20 +166,20 @@ of the trust problem and doesn't interfere with it — in either direction.**
 
 The attacks that matter for MCP — tool poisoning, cross-server hijack, prompt injection — live at the
 **content/trust layer** (OWASP's connect-time-vs-runtime gap), not the transport. Statelessness is a
-transport/scaling change: independent of the attack (it neither causes nor cures it) and *compatible*
-with the defenses. Per-request auth is the same shape as least-privilege-per-call, a stateless policy
-gateway scales horizontally, and no shared session memory removes one blast-radius surface. The honest
-ceiling: **compatible with the defenses, not itself a defense.**
+transport/scaling change: independent of the attack (it neither causes nor cures it) and it composes
+cleanly with the defenses. Per-request auth is the same shape as least-privilege-per-call, a stateless
+policy gateway scales horizontally, and no shared session memory removes one blast-radius surface. The
+take-away: **stateless is compatible with the defenses — it isn't one itself.**
 
 Prompt injection is architecturally unsolved (OWASP LLM Top-10 #1 every edition; the frontier labs agree
 it can't be fully solved in today's models), so the discipline is **containment, not prevention**:
 least-privilege per task, environment separation, a human on irreversible actions, treating tool
 *outputs* as untrusted input, and pinning/verifying tool metadata at a gateway.
 
-> **What this demo does and doesn't claim.** It removes the *routing* tax so you can scale statelessly.
-> It is deliberately **not** a security demo: the `cart_token` is a signed *reference*, not a production
-> auth token, and there's no policy gateway in the picture. The interactive diagram's **Security** tab
-> covers this in full.
+> **Where this demo stops — and what you'd build next.** This demo teaches the protocol & scaling
+> change: removing the *routing* tax. The security layers are yours to add on top, same as before —
+> the `cart_token` is a signed *reference*, not a production auth token, and there's no policy gateway
+> in the picture. The interactive diagram's **Security** tab covers this in full.
 
 ---
 

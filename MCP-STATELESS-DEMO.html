@@ -149,9 +149,12 @@ body{font-family:var(--sans);background:
 .step .st-title{font:700 1.05em var(--sans);margin-bottom:5px;}
 .step .st-desc{color:var(--muted);font-size:.94em;}
 .step .st-desc code{font:.9em var(--mono);background:var(--card2);color:var(--accent);padding:1px 6px;border-radius:5px;}
+/* --code-bg stays dark in BOTH themes, so the code text colour must be fixed too —
+   it must not inherit var(--text), which flips dark in light mode */
 .step .code{margin-top:12px;background:var(--code-bg);border:1px solid var(--border);border-radius:9px;
-  padding:12px 14px;font:.82em/1.7 var(--mono);overflow-x:auto;white-space:pre-wrap;}
+  padding:12px 14px;font:.82em/1.7 var(--mono);overflow-x:auto;white-space:pre-wrap;color:#e8edf6;}
 .code .del{color:#ff7b72;} .code .add{color:#7ee787;} .code .cmt{color:#8b949e;}
+.code .kw{color:#ff7b72;} .code .str{color:#a5d6ff;} .code .fn{color:#d2a8ff;}
 .nav{display:flex;align-items:center;gap:14px;margin-top:16px;justify-content:center;}
 .nav button{background:var(--card);border:1px solid var(--border2);color:var(--text);
   font:600 .85em var(--sans);padding:8px 18px;border-radius:8px;cursor:pointer;transition:.2s;}
@@ -505,32 +508,32 @@ const TABS = {
        t:'1 · Agent calls a tool by name',
        tech:'The MCP client serialises a JSON-RPC <code>tools/call</code> — just the tool <i>name</i> + args — and POSTs it over streamable HTTP. In stateless mode there is no <code>initialize</code> / session id.',
        nt:'The assistant asks for an action by name — “create a cart” — as a single web request.',
-       code:'<span class="cmt"># client/runner.py</span>\nawait client.call_tool("create_cart", {})'},
+       code:'<span class="cmt"># client/runner.py</span>\n<span class="kw">await</span> client.call_tool(<span class="str">"create_cart"</span>, {})'},
       {on:['mcpsrv'], lit:[], k:'accent',
        t:'2 · That name is a function on the server',
        tech:'Each tool is a <code>@server.tool()</code>-decorated function in <code>server/tools.py</code>. The name the client sent resolves to one of these. The bodies are <b>byte-identical</b> in “before” and “after” — only <code>stateless_http</code> changes.',
        nt:'The tools are just functions living on the server. The name the assistant used points to one of them — and these functions never change between the old protocol and the new one.',
-       code:'<span class="cmt"># server/tools.py</span>\n@server.tool()\nasync def create_cart() -> dict: ...\n\n@server.tool()\nasync def add_item(cart_token, name, qty=1) -> dict: ...'},
+       code:'<span class="cmt"># server/tools.py</span>\n<span class="fn">@server.tool()</span>\n<span class="kw">async def</span> <span class="fn">create_cart</span>() -> dict: ...\n\n<span class="fn">@server.tool()</span>\n<span class="kw">async def</span> <span class="fn">add_item</span>(<span class="add">cart_token</span>, name, qty=1) -> dict: ...'},
       {on:['proxy','mcpsrv'], lit:[1], k:'accent',
        t:'3 · Proxy routes it to an instance',
        tech:'The proxy reads one header (<code>mcp-session-id</code>), <code>state.pick()</code>s an instance (round-robin, or learned sticky), and forwards the raw bytes. It is MCP-agnostic.',
        nt:'The load balancer picks one of the server machines and passes the request straight through.',
-       code:'<span class="cmt"># proxy/app.py</span>\nidx = state.pick(session_id)\nawait client.request(method, target + "/mcp", content=body)'},
+       code:'<span class="cmt"># proxy/app.py</span>\nidx = state.pick(session_id)\n<span class="kw">await</span> client.request(method, target + <span class="str">"/mcp"</span>, content=body)'},
       {on:['mcpsrv','db'], lit:[2], k:'ok',
        t:'4 · create_cart runs + mints a signed token',
        tech:'The tool inserts a row and returns an HMAC-signed <code>cart_token</code> — an opaque, tamper-proof handle to that row.',
        nt:'The server creates the cart in the database and hands back a claim-ticket for it.',
-       code:'<span class="cmt"># server/tools.py + cart/store_postgres.py</span>\ncart_id = await store.create()          <span class="cmt"># insert into carts …</span>\nreturn {"cart_token": codec.encode(cart_id), "items": []}'},
+       code:'<span class="cmt"># server/tools.py + cart/store_postgres.py</span>\ncart_id = <span class="kw">await</span> store.create()          <span class="cmt"># insert into carts …</span>\n<span class="kw">return</span> {<span class="add">"cart_token"</span>: codec.encode(cart_id), <span class="str">"items"</span>: []}'},
       {on:['agent','proxy','mcpsrv'], lit:[0,1], k:'accent',
        t:'5 · Agent carries the token into the next call',
        tech:'<code>add_item</code> takes the <code>cart_token</code> as a tool argument — the state rides in the request, not in server memory. The client holds <b>no server-side session</b> — only this token — so the same agent code runs in “before” and “after,” and a pod recycle can’t strand it.',
        nt:'To add an item, the assistant simply shows its claim-ticket. Nothing is “remembered” on any one machine.',
-       code:'<span class="cmt"># client/runner.py</span>\nawait client.call_tool("add_item",\n    {"cart_token": token, "name": "apple", "qty": 2})'},
+       code:'<span class="cmt"># client/runner.py</span>\n<span class="kw">await</span> client.call_tool(<span class="str">"add_item"</span>,\n    {<span class="add">"cart_token"</span>: token, <span class="str">"name"</span>: <span class="str">"apple"</span>, <span class="str">"qty"</span>: 2})'},
       {on:['mcpsrv','db'], lit:[2], k:'ok',
        t:'6 · add_item verifies the token + updates',
        tech:'<code>codec.decode</code> re-signs the id and <code>compare_digest</code>s it (no forgery), then appends the item with a jsonb <code>||</code>.',
        nt:'The server checks the ticket is genuine, then adds the item to that cart in the database.',
-       code:'<span class="cmt"># cart/token.py + cart/store_postgres.py</span>\ncart_id = codec.decode(cart_token)      <span class="cmt"># verify HMAC</span>\nupdate carts set items = items || $2::jsonb where id = $1'},
+       code:'<span class="cmt"># cart/token.py + cart/store_postgres.py</span>\ncart_id = codec.decode(<span class="add">cart_token</span>)      <span class="cmt"># verify HMAC</span>\n<span class="kw">update</span> carts <span class="kw">set</span> items = items || $2::jsonb <span class="kw">where</span> id = $1'},
       {on:['agent','proxy','mcpsrv','db'], lit:[0,1,2], k:'ok',
        t:'7 · Any instance can serve any call',
        tech:'Because the token + Postgres hold the state, no server-side session is needed. That is why a plain round-robin works — and why the migration is only two lines.',

@@ -239,7 +239,8 @@ body{font-family:var(--sans);background:
           <code>initialize</code>, and that session lives in <b>one instance's memory</b>. Put two
           instances behind a plain load balancer and the agent's next call can miss its session —
           <b>“Session not found.”</b> To cope you bolt on sticky routing and a shared session store;
-          when a pod recycles, live agents drop mid-task. That is the operational tax.</p>
+          when a pod recycles — or the autoscaler scales in — live agents drop mid-task.
+          That is the operational tax.</p>
       </div>
       <div class="nar-card" style="--tone:var(--ok)">
         <h4>The fix — MCP goes stateless (2026-07-28)</h4>
@@ -423,7 +424,7 @@ const TABS = {
        nt:'And because a machine restarting would wipe all its conversations, you add yet another database just to keep them safe. More to run, more to break.'},
       {on:['sticky','store'], ghost:[], lit:[1,2], k:'amber',
        t:'The tax',
-       tech:'A session-aware gateway + a shared store + no free horizontal scaling. Recycle the wrong instance and its live sessions still drop mid-task.',
+       tech:'A session-aware gateway + a shared store + no free horizontal scaling. Lose the wrong instance — a scale-in, a deploy, a recycle — and its live sessions still drop mid-task.',
        nt:'The bill for making the old way work at scale: two extra pieces of infrastructure to own — and it’s still fragile when a server restarts.'},
     ]
   },

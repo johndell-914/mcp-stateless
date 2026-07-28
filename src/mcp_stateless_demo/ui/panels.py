@@ -138,22 +138,24 @@ _NARRATIVE: dict[str, tuple[str, str, str]] = {
     ),
     "recycle": (
         _AMBER,
-        "And it is fragile: recycle a pod and that agent drops mid-task.",
-        "Sticky is on, yet when the instance holding a live session is recycled, that "
-        "conversation is gone — even though the load balancer is doing its job.",
+        "And it is fragile: scale in — or recycle — and that agent drops mid-task.",
+        "Sticky fixed scale-out, but pools shrink too. When the pod holding a live session "
+        "leaves — a scale-in, a deploy rolling pods, a crash — that conversation is gone, "
+        "even though the load balancer did its job.",
     ),
     "recycle_survive": (
         _OK,
-        "Recycle a pod — the agent doesn't even notice.",
-        "Stateless, plain round-robin. Recycle the very instance that created the cart and the "
-        "next call just lands on another — the cart_token + Postgres carry the state. The same "
-        "recycle that dropped the sticky session is a non-event here.",
+        "Take the same pod away — the agent doesn't even notice.",
+        "Stateless, plain round-robin. Remove the very instance that created the cart and the "
+        "next call just lands on another — the cart_token + Postgres carry the state. The "
+        "scale-in that dropped the sticky session is a non-event here.",
     ),
     "recycle_none": (
         _MUTED,
-        "No live session to recycle yet.",
+        "No live session to disrupt yet.",
         "Run ② Add the tax or ③ Go stateless first — that starts a live agent session on a "
-        "real pod. Then recycle that pod and watch what the protocol does.",
+        "real pod. Then take that pod away (scale-in / recycle) and watch what the protocol "
+        "does.",
     ),
     "stateless": (
         _OK,
@@ -189,7 +191,7 @@ def _instance_card(name: str, *, down: bool, served: bool) -> str:
         border, ink = _LINE, _INK
     cls = "mcp-served" if served and not down else ""
     badge = (
-        f'<div style="color:{_ERR};font:600 10px {_SANS};margin-top:3px">recycled</div>'
+        f'<div style="color:{_ERR};font:600 10px {_SANS};margin-top:3px">removed from pool</div>'
         if down
         else (
             f'<div style="color:{_OK};font:600 10px {_SANS};margin-top:3px">● served</div>'
@@ -321,7 +323,7 @@ def render_architecture(
 
 
 # ── request results table ───────────────────────────────────────────────────────────────
-_RECYCLE_DIVIDER = "💥 pod recycled — the agent's next turn on the same session ↓"
+_RECYCLE_DIVIDER = "💥 pod scaled in / recycled — the agent's next turn on the same session ↓"
 
 
 def _divider_row(label: str) -> str:

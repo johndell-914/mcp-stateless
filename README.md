@@ -56,10 +56,11 @@ The live demo walks a guided story with the **same three tools** each time:
 3. **③ Go stateless** — flip the protocol → every request succeeds across instances, nothing extra to own.
 4. **④ Prove it at scale** — blast 60 concurrent agents at a real autoscaling service → Cloud Run fans out to N instances, every request green, proven by the platform's own instance IDs in the logs.
 
-**💥 Recycle a pod** is the two-sided probe you run *after* ② or ③: it recycles the pod holding
-your live agent session, then takes one more turn on that same session. After **②** the pinned
-conversation **drops mid-task**; after **③** the *same* recycle is a **non-event** — a surviving
-instance carries the session on. Same disruptive action, the protocol decides the outcome.
+**💥 Scale in / recycle a pod** is the two-sided probe you run *after* ② or ③: it takes away the
+pod holding your live agent session — the same event a scale-in, a deploy, or a crash produces —
+then takes one more turn on that same session. After **②** the pinned conversation **drops
+mid-task**; after **③** the *same* event is a **non-event** — a surviving instance carries the
+session on. Same disruptive action, the protocol decides the outcome.
 
 ![Under load — real Cloud Run autoscale](assets/diagram-at-scale.png)
 
@@ -214,9 +215,9 @@ Want a headless sanity check first? `uv run python scripts/smoke.py` spins up a
 (BEFORE = all-red, AFTER = all-green) — the fastest way to confirm your `DATABASE_URL` works.
 
 > **What runs locally vs. what needs Cloud Run.** `docker compose up` is a real
-> multi-instance stack, so beats ①–③ and the **💥 Recycle** probe — the scale break, the sticky
-> tax, the recycle (drop under sticky *and* survive under stateless), and going stateless — all
-> work locally against distinct process memories. Beat
+> multi-instance stack, so beats ①–③ and the **💥 Scale in / recycle** probe — the scale break,
+> the sticky tax, the pod loss (drop under sticky *and* survive under stateless), and going
+> stateless — all work locally against distinct process memories. Beat
 > ④ (the *real* autoscale blast) and the live Cloud Run log panels need a deployed
 > autoscaling service and log access; locally they degrade to a friendly "no logs"
 > placeholder. **To present the full story, including the autoscale proof, deploy to
@@ -235,7 +236,7 @@ audience watches the architecture change as the behavior changes.
 | **② Add the tax** | Before | Sticky routing fixes it, but now you own a session-aware gateway and a shared store. |
 | **③ Go stateless** | The Change → After | Flip one flag; every request succeeds across instances, nothing extra to own. |
 | **④ Prove it at scale** | At Scale | 60 concurrent agents at a real autoscaling service — Cloud Run fans out to N instances, all green, proven by the platform's own instance IDs. |
-| **💥 Recycle a pod** *(after ②, then after ③)* | Before, then After | Same action, opposite outcome — after ② the pinned session **drops** (red rows); after ③ the same recycle **survives** (green, on another instance). The protocol decides. |
+| **💥 Scale in / recycle a pod** *(after ②, then after ③)* | Before, then After | Same action, opposite outcome — after ② the pinned session **drops** (red rows); after ③ the same pod loss is a **non-event** (green, on another instance). The protocol decides. |
 
 Two buttons help you run it live: **↻ Refresh logs** re-pulls the Cloud Run logs (they lag
 a few seconds behind a burst), and **↺ Reset** returns the stack to a clean opening state

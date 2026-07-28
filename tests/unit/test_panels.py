@@ -34,9 +34,9 @@ def test_results_table_recycle_divider_marks_the_boundary() -> None:
                   cart=[{"name": "banana", "qty": 1}]),
     ]
     result = ActResult(mode="auto", rows=rows)
-    assert "pod recycled" not in panels.render_results_table(result)  # off by default
+    assert "pod scaled in" not in panels.render_results_table(result)  # off by default
     html = panels.render_results_table(result, divider_after=2)  # divider after rows 1-2
-    assert html.index("apple") < html.index("pod recycled") < html.index("banana")
+    assert html.index("apple") < html.index("pod scaled in") < html.index("banana")
 
 
 def test_scenario_has_key_phrase_and_agent_framing() -> None:
@@ -80,7 +80,7 @@ def test_architecture_shows_recycled_instance() -> None:
     html = panels.render_architecture(
         "before", ["legacy-a", "legacy-b"], sticky=True, down=["legacy-a"]
     )
-    assert "recycled" in html
+    assert "removed from pool" in html
 
 
 def test_blast_summary() -> None:

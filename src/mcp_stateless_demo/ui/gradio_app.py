@@ -1,6 +1,6 @@
 """The Gradio demo app — a guided, four-beat narrative.
 
-Thin orchestration over the ActRunner (drives the cart acts + the recycle drop + the
+Thin orchestration over the ActRunner (drives the cart acts + the pod-loss drop + the
 autoscale blast) and the proxy control endpoints (sticky / target / kill). Every visual
 comes from ``panels``; this module wires buttons to handlers and pulls real Cloud Run logs
 for the proof panels.
@@ -8,7 +8,7 @@ for the proof panels.
 Beats:
   ① Scale it        round-robin, no sticky → "Session not found" (the break)
   ② The tax         sticky routing + session store → works, but costly
-     💥 Recycle      hold a session, recycle its pod → drops mid-task
+     💥 Scale in     hold a session, take its pod away (scale-in / recycle) → drops mid-task
   ③ Go stateless    the 2-line change → works across instances, nothing to own
   ④ Prove at scale  blast the real autoscaling service → N instances, all green, proven by logs
 """
@@ -230,11 +230,12 @@ class Demo:
         )
 
     async def recycle_pod(self) -> tuple[str, str, str, str, str]:
-        """Recycle the pod holding the live agent session, then continue on the SAME session.
+        """Take away (scale in / recycle) the pod holding the live agent session, then continue
+        on the SAME session.
 
         The outcome is whatever the architecture actually does — no fabricated session, no
         world-guessing. We act on the real conversation ② or ③ established: legacy pinned it to
-        one pod, so recycling that pod drops it; stateless bound it to no pod, so a surviving
+        one pod, so losing that pod drops it; stateless bound it to no pod, so a surviving
         instance carries on. Same disruptive action, the protocol decides the outcome.
         """
         conv = self._conv
@@ -253,7 +254,7 @@ class Demo:
         if legacy:
             for r in result.rows:  # restate the generic client error as the true, known cause
                 if not r.ok:
-                    r.error = f"session lost — pod {pod} was recycled"
+                    r.error = f"session lost — pod {pod} left the pool (scale-in / recycle)"
         served = [r.served_by for r in result.rows if r.ok and r.served_by]
 
         # The session's REAL Cloud Run logs, scoped to when it started (refreshable).
@@ -263,8 +264,8 @@ class Demo:
             logs = await self._pull_logs(
                 [self.proxy_svc],
                 headline="Cloud Run logs — the drop, at the load balancer",
-                subtitle=f"the proxy forwarded this session to {pod} (200s); after {pod} was "
-                "recycled the next calls have no instance to reach → 503 (that's the drop)",
+                subtitle=f"the proxy forwarded this session to {pod} (200s); after {pod} left "
+                "the pool the next calls have no instance to reach → 503 (that's the drop)",
                 contains="POST /mcp",
                 since=self._conv_since,
                 show_instances=False,
@@ -273,8 +274,8 @@ class Demo:
             logs = await self._pull_logs(
                 self.modern_svc,
                 headline="Cloud Run logs — the survivor carried on",
-                subtitle="real stdout: two instances served this session; the post-recycle turn "
-                "landed on the survivor",
+                subtitle="real stdout: two instances served this session; the turn after the "
+                "pod left landed on the survivor",
                 contains="POST /mcp",
                 since=self._conv_since,
             )
@@ -309,7 +310,7 @@ class Demo:
             panels.render_log_proof(
                 None,
                 headline="no live session yet",
-                subtitle="run ② Add the tax or ③ Go stateless first, then recycle its pod",
+                subtitle="run ② Add the tax or ③ Go stateless first, then scale in / recycle its pod",
                 note="—",
             ),
         )
@@ -397,7 +398,7 @@ def build_demo(settings: Settings | None = None) -> gr.Blocks:
                     b2 = gr.Button("② Add the tax (sticky + store)")
                     b3 = gr.Button("③ Go stateless", variant="primary")
                     b4 = gr.Button("④ Prove it at scale ⚡", variant="primary")
-                    recycle = gr.Button("💥 Recycle a pod")
+                    recycle = gr.Button("💥 Scale in / recycle a pod")
                     refresh = gr.Button("↻ Refresh logs")
                 # Reset lives OUTSIDE the operational group (with a spacer + a distinct glyph and
                 # a smaller, quieter style) so it isn't fat-fingered in place of "↻ Refresh logs"
